@@ -20,7 +20,7 @@ npm run build
 Copy `.env.example` to `.env` and set:
 
 ```env
-VITE_TMDB_API_KEY=your_key
+APP_TMDB_API_KEY=your_key
 ```
 
 Do not commit `.env`.
@@ -30,8 +30,8 @@ Do not commit `.env`.
 This project includes an authentication-ready UI using Supabase Auth. Set:
 
 ```env
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_PUBLISHABLE_KEY=...
+APP_SUPABASE_URL=...
+APP_SUPABASE_PUBLISHABLE_KEY=...
 ```
 
 Then enable Google, Discord and Facebook providers in the Supabase dashboard and configure each provider's OAuth credentials/redirect URI. Supabase documents these providers and callback setup.

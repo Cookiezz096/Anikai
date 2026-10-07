@@ -20,7 +20,7 @@ npm run dev
 
 Add your API keys to `.env`:
 ```
-VITE_TMDB_API_KEY=your_key
-VITE_SUPABASE_URL=your_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
+APP_TMDB_API_KEY=your_key
+APP_SUPABASE_URL=your_url
+APP_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```

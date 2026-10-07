@@ -1336,7 +1336,7 @@ function Login() {
         <h1>Welcome back</h1>
         <p>Sign in to keep your list and watch history.</p>
         {!authConfigured && (
-          <Notice text="Supabase is not configured yet. Add the VITE_SUPABASE_* variables to enable authentication." />
+          <Notice text="Supabase is not configured yet. Add the APP_SUPABASE_* variables to enable authentication." />
         )}
         <button
           className="oauth google"
