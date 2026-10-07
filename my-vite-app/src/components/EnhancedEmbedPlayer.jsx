@@ -10,9 +10,13 @@ import {
   Check,
   Server,
   WifiOff,
+  ShieldCheck,
+  Shield,
+  ShieldAlert,
 } from "lucide-react";
 import SkipTimingsOverlay from "./SkipTimingsOverlay";
 import AutoNextOverlay from "./AutoNextOverlay";
+import { adShield } from "../utils/adShield";
 import {
   getWatchProgress,
   saveWatchProgress,
@@ -39,6 +43,7 @@ export default function EnhancedEmbedPlayer({
   mediaTitle = "",
   season = 1,
   episode = 1,
+  posterPath = "",
   hasNextEpisode = false,
   nextEpisodeNumber = 2,
   nextEpisodeTitle = "",
@@ -52,10 +57,21 @@ export default function EnhancedEmbedPlayer({
   const [showAutoNext, setShowAutoNext] = useState(false);
   const [showResumeBanner, setShowResumeBanner] = useState(false);
   const [savedProgress, setSavedProgress] = useState(null);
+  const [adShieldActive, setAdShieldActive] = useState(adShield.isShieldActive());
+  const [blockedCount, setBlockedCount] = useState(adShield.getBlockedCount());
 
   const failTimeoutRef = useRef(null);
   const progressIntervalRef = useRef(null);
   const currentUrl = isTrailer && trailerUrl ? trailerUrl : server?.url || "";
+
+  // Subscribe to Ad Shield changes
+  useEffect(() => {
+    const unsubscribe = adShield.subscribe(({ enabled, blockedCount: count }) => {
+      setAdShieldActive(enabled);
+      setBlockedCount(count);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Check for saved watch progress on title/episode change
   useEffect(() => {
@@ -112,6 +128,7 @@ export default function EnhancedEmbedPlayer({
         episode,
         currentTime: elapsed,
         duration: 1440, // standard duration estimate if not accessible from sandbox
+        posterPath,
       });
     }, 10000);
 
@@ -249,14 +266,45 @@ export default function EnhancedEmbedPlayer({
         </div>
       )}
 
+      {/* ── Ad Shield Floating Protection Badge ── */}
+      {!isTrailer && (
+        <div className={`player-ad-shield-pill ${adShieldActive ? "active" : "disabled"}`}>
+          <button
+            type="button"
+            className="ad-shield-toggle-btn"
+            onClick={() => adShield.setShieldEnabled(!adShieldActive)}
+            title={
+              adShieldActive
+                ? "Ad Shield Active: Intrusive popups, redirects and clickjacking are blocked. Click to toggle."
+                : "Ad Shield Disabled: Click to enable popup blocking."
+            }
+          >
+            {adShieldActive ? (
+              <>
+                <ShieldCheck size={13} className="shield-active-icon" />
+                <span>Ad Shield: Active</span>
+                {blockedCount > 0 && (
+                  <span className="shield-blocked-pill">{blockedCount} Blocked</span>
+                )}
+              </>
+            ) : (
+              <>
+                <ShieldAlert size={13} className="shield-disabled-icon" />
+                <span>Ad Shield: Off</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* ── Video Player Iframe ── */}
       {currentUrl && !hasError && (
         <iframe
           key={`${currentUrl}-${reloadKey}`}
           className={`video enhanced-video-player ${isLoading ? "loading" : "ready"}`}
           src={currentUrl}
+          allow="autoplay; fullscreen; picture-in-picture; encrypted-media; accelerometer; gyroscope; clipboard-write; web-share"
           allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
           referrerPolicy="origin-when-cross-origin"
           onLoad={handleIframeLoad}
           onError={() => handlePlaybackFailure("iframe_error")}

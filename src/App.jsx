@@ -32,6 +32,7 @@ import {
   Layers,
   Server,
   WifiOff,
+  ShieldCheck,
 } from "lucide-react";
 import {
   getMovie,
@@ -51,6 +52,7 @@ import EnhancedEmbedPlayer from "./components/EnhancedEmbedPlayer";
 import AutoNextOverlay from "./components/AutoNextOverlay";
 import SkipTimingsOverlay from "./components/SkipTimingsOverlay";
 import { rankSources, getBestSourceIndex } from "./utils/serverRanking";
+import { useServerHealth } from "./utils/useServerHealth";
 import {
   getWatchProgress,
   setPreferredServer,
@@ -583,8 +585,8 @@ function EmbedPlayer({ url, reloadKey, isTrailer = false }) {
         key={`${url}-${reloadKey}`}
         className={`video ${isIframeLoading ? "loading" : "ready"}`}
         src={url}
+        allow="autoplay; fullscreen; picture-in-picture; encrypted-media; accelerometer; gyroscope; clipboard-write; web-share"
         allowFullScreen
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
         referrerPolicy="origin-when-cross-origin"
         onLoad={() => setIsIframeLoading(false)}
         title={isTrailer ? "Official HD Trailer" : "Video Player"}
@@ -621,6 +623,23 @@ function WatchPage() {
   const [triedServerIds, setTriedServerIds] = useState(new Set());
   const failoverInProgress = useRef(false);
   const autoplayEnabled = getAutoplayNext();
+
+  // IMPORTANT: useServerHealth must live here — BEFORE any early returns — to satisfy
+  // React Hook rules. releaseData is passed in via computed value from `media` state.
+  const releaseDataForHook = media
+    ? getMediaReleaseData({ type, id, season, episode, imdbId: media.external_ids?.imdb_id || media.imdb_id })
+    : null;
+  const contentTypeForHook =
+    releaseDataForHook?.contentType ||
+    CUSTOM_MEDIA_DATABASE[String(id)]?.contentType ||
+    (type === "tv" ? "anime" : "movie");
+  const { isChecking, getSourceStatus } = useServerHealth(contentTypeForHook, releaseDataForHook ? {
+    releaseData: releaseDataForHook,
+    type,
+    id,
+    season,
+    episode,
+  } : null);
 
   // Sync URL search params when season/episode change
   useEffect(() => {
@@ -731,6 +750,14 @@ function WatchPage() {
         });
     }
   }, [type, id, season, media?.number_of_seasons]);
+  const pageTitle = media?.title || media?.name;
+  // Update browser tab title with Anikai branding
+  useEffect(() => {
+    if (pageTitle) {
+      document.title = `${pageTitle} - Anikai`;
+    }
+    return () => { document.title = "Anikai - Watch Anime & Movies"; };
+  }, [pageTitle]);
 
   if (error)
     return (
@@ -788,23 +815,30 @@ function WatchPage() {
     activeCategoryStatus === STATUS_TYPES.AVAILABLE;
 
   const allCategorySources = activeCatConfig?.sources || [];
-  const playableSources = allCategorySources.filter((src) => {
-    const key = getSourceHealthKey({
-      serverId: src.id,
-      type,
-      id,
-      season,
-      episode,
-      categoryKey: resolvedCategoryKey,
-    });
-    const status = getSourceHealth(key, src.id);
-    return isServerPlayable(status);
-  });
+
+  // Dynamically rank sources for this exact episode — prioritises:
+  //   ① WORKING + English Subtitles ② WORKING + Any Subtitles ③ UNVERIFIED ④ DEGRADED
+  // Servers that are UNAVAILABLE or OFFLINE are filtered out automatically.
+  const rankedSources = rankSources(
+    allCategorySources,
+    (src) => getSourceStatus(src, resolvedCategoryKey),
+    resolvedCategoryKey
+  );
   const currentSources =
-    playableSources.length > 0 ? playableSources : allCategorySources;
+    rankedSources.length > 0 ? rankedSources.map((r) => r.source) : allCategorySources;
   const currentServer = currentSources[serverIdx] || currentSources[0] || null;
+
+  // Resolve subtitles from the episode-level health result first, then source metadata
+  const currentServerStatus = currentServer
+    ? getSourceStatus(currentServer, resolvedCategoryKey)
+    : null;
   const subtitles =
-    currentServer?.subtitles || activeCatConfig?.subtitles || [];
+    (typeof currentServerStatus === "object" && currentServerStatus?.subtitles?.length > 0
+      ? currentServerStatus.subtitles
+      : null) ??
+    currentServer?.subtitles ??
+    activeCatConfig?.subtitles ??
+    [];
 
   // Determine alternative available category if currently chosen category is upcoming/delayed
   let availableAlternative = null;
@@ -831,13 +865,6 @@ function WatchPage() {
   }
 
   const title = media.title || media.name;
-  // Update browser tab title with Anikai branding
-  useEffect(() => {
-    if (title) {
-      document.title = `${title} - Anikai`;
-    }
-    return () => { document.title = "Anikai - Watch Anime & Movies"; };
-  }, [title]);
   const releaseYear = (
     media.release_date ||
     media.first_air_date ||
@@ -897,9 +924,22 @@ function WatchPage() {
     if (failedServerId) {
       recordServerFailure(failedServerId);
       setTriedServerIds((prev) => new Set([...prev, failedServerId]));
+      // Mark this exact episode+server as UNAVAILABLE in the health service
+      // so it is skipped in future rankings for this session
+      try {
+        reportRuntimePlaybackIssue({
+          serverId: failedServerId,
+          type,
+          id,
+          season,
+          episode,
+          categoryKey: resolvedCategoryKey,
+          issueType: "unavailable",
+        });
+      } catch (_) {}
     }
 
-    // Find next untried source
+    // Find next untried source from ranked list
     const nextIndex = currentSources.findIndex(
       (src, idx) => idx > serverIdx && !triedServerIds.has(src.id)
     );
@@ -963,6 +1003,12 @@ function WatchPage() {
                 {isTrailerActive ? "Trailer" : currentServer.badge}
               </span>
             )}
+            {isCurrentCategoryAvailable && !isTrailerActive && (
+              <span className="player-shield-indicator" title="Ad Shield Active - Popups & Redirects Blocked">
+                <ShieldCheck size={12} />
+                <span>Ad Shield</span>
+              </span>
+            )}
             <span className="player-server-name">
               {isTrailerActive
                 ? "Official Trailer"
@@ -1006,7 +1052,13 @@ function WatchPage() {
 
         {/* ── Player Frame ── */}
         <div className="player-shell">
-          {isTrailerActive && trailerUrl ? (
+          {isChecking && !isTrailerActive ? (
+            <div className="player-all-failed-overlay">
+              <LoaderCircle size={38} className="spin" style={{ marginBottom: "1rem" }} />
+              <h3>Finding Best Stream...</h3>
+              <p>Validating servers &amp; checking subtitles for this episode.</p>
+            </div>
+          ) : isTrailerActive && trailerUrl ? (
             <EnhancedEmbedPlayer
               server={{ url: trailerUrl }}
               serverName="Official HD Trailer"

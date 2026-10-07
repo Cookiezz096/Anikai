@@ -18,6 +18,12 @@ export const tmdbImage = (path, size = "w500") =>
 export const getTrending = () => request("/trending/all/week");
 export const getPopularMovies = () => request("/movie/popular");
 export const getPopularTV = () => request("/tv/popular");
+export const getNowPlayingMovies = () => request("/movie/now_playing");
+export const getUpcomingMovies = () => request("/movie/upcoming");
+export const getAiringTodayTV = () => request("/tv/airing_today");
+export const getOnTheAirTV = () => request("/tv/on_the_air");
+export const getDiscoverAnime = () =>
+  request("/discover/tv", { with_genres: "16", sort_by: "popularity.desc" });
 export const searchMulti = (query) =>
   request("/search/multi", { query, include_adult: "false" });
 
@@ -33,6 +39,12 @@ export const getTV = (id) =>
 
 export const getSeason = (id, season) =>
   request(`/tv/${id}/season/${season}`);
+
+export const getWatchProviders = (type, id) => {
+  const endpoint = type === "movie" ? "movie" : "tv";
+  return request(`/${endpoint}/${id}/watch/providers`);
+};
+
 
 /**
  * Extracts the official YouTube trailer embed URL if available

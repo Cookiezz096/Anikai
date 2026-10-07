@@ -2126,7 +2126,7 @@ footer b {
   font-weight: 400;
 }
 /* ---------------------------------------------------------------
-   ENHANCED PLAYER — Loading, Error, Failover, Resume, Skip Overlays
+   ENHANCED PLAYER ï¿½ Loading, Error, Failover, Resume, Skip Overlays
    --------------------------------------------------------------- */
 
 .enhanced-player-wrapper {
@@ -2566,7 +2566,7 @@ footer b {
 }
 
 /* ---------------------------------------------------------------
-   PLAYER — iframe ready/loading transitions
+   PLAYER ï¿½ iframe ready/loading transitions
    --------------------------------------------------------------- */
 
 .video.loading {
@@ -2579,7 +2579,7 @@ footer b {
 }
 
 /* ---------------------------------------------------------------
-   MOBILE RESPONSIVENESS — Watch Page
+   MOBILE RESPONSIVENESS ï¿½ Watch Page
    --------------------------------------------------------------- */
 
 @media (max-width: 640px) {
@@ -2607,3 +2607,106 @@ footer b {
     white-space: normal;
   }
 }
+
+/* English Subtitle badge on server pills */
+.server-eng-sub-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+/* â”€â”€ Ad Shield Floating Protection Pill â”€â”€ */
+.player-ad-shield-pill {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.ad-shield-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 9999px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45), 0 0 12px rgba(16, 185, 129, 0.15);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  user-select: none;
+}
+
+.player-ad-shield-pill.disabled .ad-shield-toggle-btn {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45), 0 0 12px rgba(239, 68, 68, 0.15);
+}
+
+.ad-shield-toggle-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(15, 23, 42, 0.95);
+  border-color: rgba(16, 185, 129, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55), 0 0 16px rgba(16, 185, 129, 0.25);
+}
+
+.player-ad-shield-pill.disabled .ad-shield-toggle-btn:hover {
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55), 0 0 16px rgba(239, 68, 68, 0.25);
+}
+
+.shield-active-icon {
+  color: #10b981;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5));
+}
+
+.shield-disabled-icon {
+  color: #ef4444;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5));
+}
+
+.shield-blocked-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: rgba(16, 185, 129, 0.2);
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.player-shield-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  letter-spacing: 0.02em;
+}
+
+

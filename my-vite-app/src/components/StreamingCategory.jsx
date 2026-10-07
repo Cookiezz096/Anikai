@@ -7,16 +7,24 @@ import {
   WifiOff,
   AlertTriangle,
   RefreshCw,
-  ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 import ReleaseStatusBadge from "./ReleaseStatusBadge";
 import { STATUS_TYPES } from "../utils/releaseUtils";
-import { SERVER_HEALTH, isServerPlayable } from "../data/sources";
+import {
+  SERVER_HEALTH,
+  AD_QUALITY,
+  AD_QUALITY_LABEL,
+  AD_QUALITY_CLASS,
+  isServerPlayable,
+  isAdQualityAcceptable,
+} from "../data/sources";
 
 /**
  * StreamingCategory Component
  * Renders a single category block (SUB / S-SUB / DUB) with its status badge and server list.
- * Evaluates Title/Episode-Specific source health and hides unavailable/offline sources.
+ * Evaluates title/episode-specific source health, hides unavailable/offline sources,
+ * and shows Ad Quality badges on each server pill.
  */
 export default function StreamingCategory({
   categoryKey = "sub",
@@ -46,6 +54,16 @@ export default function StreamingCategory({
     const healthStr = typeof srcStatus === "object" ? srcStatus.health : srcStatus;
     return isServerPlayable(healthStr);
   });
+
+  // Separate auto-selectable from excessive-ads (still shown, but visually flagged)
+  const acceptableSources = sources.filter((src) =>
+    isAdQualityAcceptable(src.adQuality ?? AD_QUALITY.UNKNOWN)
+  );
+  const excessiveOnlySources = sources.filter(
+    (src) => src.adQuality === AD_QUALITY.EXCESSIVE_ADS
+  );
+  const allExcessive =
+    sources.length > 0 && acceptableSources.length === 0;
 
   const offlineCount = allSources.length - sources.length;
 
@@ -107,10 +125,33 @@ export default function StreamingCategory({
     if (typeof srcStatus === "object" && srcStatus.englishSubtitle) return true;
     if (Array.isArray(source.subtitles)) {
       return source.subtitles.some(
-        (s) => s.languageCode?.toLowerCase() === "en" || s.language?.toLowerCase().includes("english")
+        (s) =>
+          s.languageCode?.toLowerCase() === "en" ||
+          s.language?.toLowerCase().includes("english")
       );
     }
     return false;
+  }
+
+  /**
+   * Renders the Ad Quality indicator for a server pill.
+   * Only shows a badge for MODERATE_ADS, EXCESSIVE_ADS and UNKNOWN — clean/low are silent.
+   */
+  function AdQualityBadge({ adQuality }) {
+    if (
+      !adQuality ||
+      adQuality === AD_QUALITY.CLEAN ||
+      adQuality === AD_QUALITY.LOW_ADS
+    ) {
+      return null;
+    }
+    const label = AD_QUALITY_LABEL[adQuality] ?? "Unknown Ads";
+    const cls = AD_QUALITY_CLASS[adQuality] ?? "ad-unknown";
+    return (
+      <span className={`server-ad-quality-badge ${cls}`} title={`Ad Level: ${label}`}>
+        {adQuality === AD_QUALITY.EXCESSIVE_ADS ? "⚠ Ads" : "Ads"}
+      </span>
+    );
   }
 
   return (
@@ -167,39 +208,56 @@ export default function StreamingCategory({
       <div className="category-servers-row">
         {isAvailable ? (
           sources.length > 0 ? (
-            sources.map((srv, index) => {
-              const isServerActive =
-                isCategorySelected && activeServerIndex === index;
-              const displayName = srv.name || `Server ${index + 1}`;
-              const badge = srv.badge || srv.quality || "1080p HD";
-              const badgeClass = srv.badgeClass || "badge-fhd";
+            <>
+              {/* Warning shown when all available providers have excessive ads */}
+              {allExcessive && (
+                <div className="category-excessive-ads-warning">
+                  <ShieldOff size={14} />
+                  <span>
+                    All available sources have excessive ads. Select one below or try a different category.
+                  </span>
+                </div>
+              )}
 
-              return (
-                <button
-                  key={srv.id || `${srv.name}-${index}`}
-                  type="button"
-                  className={`server-pill-btn ${isServerActive ? "active" : ""}`}
-                  onClick={() => onSelectServer(categoryKey, index, srv)}
-                  title={`${displayName} — ${badge}${
-                    srv.tag ? " · " + srv.tag : ""
-                  }`}
-                >
-                  <span className="server-pill-name">{displayName}</span>
-                  {badge && (
-                    <span className={`server-pill-badge ${badgeClass}`}>
-                      {badge}
-                    </span>
-                  )}
-                  {hasEnglishSub(srv) && (
-                    <span className="server-eng-sub-badge" title="English subtitles verified">🔤 EN</span>
-                  )}
-                  {getHealthIcon(srv)}
-                  {isServerActive && (
-                    <Check size={12} className="server-check-icon" />
-                  )}
-                </button>
-              );
-            })
+              {sources.map((srv, index) => {
+                const isServerActive =
+                  isCategorySelected && activeServerIndex === index;
+                const displayName = srv.name || `Server ${index + 1}`;
+                const badge = srv.badge || srv.quality || "1080p HD";
+                const badgeClass = srv.badgeClass || "badge-fhd";
+                const isExcessive =
+                  srv.adQuality === AD_QUALITY.EXCESSIVE_ADS;
+
+                return (
+                  <button
+                    key={srv.id || `${srv.name}-${index}`}
+                    type="button"
+                    className={`server-pill-btn ${isServerActive ? "active" : ""} ${
+                      isExcessive ? "server-pill-excessive-ads" : ""
+                    }`}
+                    onClick={() => onSelectServer(categoryKey, index, srv)}
+                    title={`${displayName} — ${badge}${srv.tag ? " · " + srv.tag : ""}${
+                      isExcessive ? " · ⚠ Excessive Ads" : ""
+                    }`}
+                  >
+                    <span className="server-pill-name">{displayName}</span>
+                    {badge && (
+                      <span className={`server-pill-badge ${badgeClass}`}>
+                        {badge}
+                      </span>
+                    )}
+                    {hasEnglishSub(srv) && (
+                      <span className="server-eng-sub-badge" title="English subtitles verified">🔤 EN</span>
+                    )}
+                    <AdQualityBadge adQuality={srv.adQuality} />
+                    {getHealthIcon(srv)}
+                    {isServerActive && (
+                      <Check size={12} className="server-check-icon" />
+                    )}
+                  </button>
+                );
+              })}
+            </>
           ) : (
             // All servers for this category are unavailable for this title/episode
             <div className="category-no-servers-msg">
@@ -220,7 +278,7 @@ export default function StreamingCategory({
             onClick={() => onSelectCategory && onSelectCategory(categoryKey)}
           >
             <span>
-              Click to view {categoryLabel} release countdown & schedule
+              Click to view {categoryLabel} release countdown &amp; schedule
             </span>
           </div>
         )}

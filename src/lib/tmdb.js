@@ -34,6 +34,12 @@ export const getTV = (id) =>
 export const getSeason = (id, season) =>
   request(`/tv/${id}/season/${season}`);
 
+export const getWatchProviders = (type, id) => {
+  const endpoint = type === "movie" ? "movie" : "tv";
+  return request(`/${endpoint}/${id}/watch/providers`);
+};
+
+
 /**
  * Extracts the official YouTube trailer embed URL if available
  */

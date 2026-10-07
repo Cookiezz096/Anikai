@@ -1,16 +1,18 @@
 /**
  * sources.js
- * Streaming server registry with capability and health metadata.
+ * Streaming server registry with capability, health, and ad-quality metadata.
  *
  * Each server declares:
  *   - contentTypes: ['anime', 'movie', 'both']  — what content it can stream
  *   - supports.sub: boolean  — can serve SUB (subtitled) content
  *   - supports.dub: boolean  — can serve DUB (English/international dubbed) content
- *   - health: 'working' | 'unverified' | 'degraded' | 'unavailable' | 'offline'
+ *   - health: SERVER_HEALTH.*  — provider availability status
+ *   - adQuality: AD_QUALITY.*  — popup/ad intrusion level (separate from health)
  *   - movie(id, imdb): function returning embed URL for movies
  *   - tv(id, s, e, imdb): function returning embed URL for TV/anime episodes
  */
 
+// ─── Provider Health (availability) ────────────────────────────────────────
 export const SERVER_HEALTH = {
   WORKING:     "working",     // Direct verified active & playable source
   UNVERIFIED:  "unverified",  // Valid endpoint reachable; browser CORS limits deep manifest inspection, treated as playable
@@ -19,25 +21,78 @@ export const SERVER_HEALTH = {
   OFFLINE:     "offline",     // Host unreachable / DNS fail / connection refused (NOT playable)
 };
 
+// ─── Ad Quality (popup / ad intrusion — separate from health) ──────────────
+export const AD_QUALITY = {
+  CLEAN:         "clean",          // No ads or popups at all
+  LOW_ADS:       "low_ads",        // Occasional, non-intrusive banner ads only
+  MODERATE_ADS:  "moderate_ads",   // Pre-roll or interstitial ads, manageable
+  EXCESSIVE_ADS: "excessive_ads",  // Non-stop popup tabs / redirect storms
+  UNKNOWN:       "unknown",        // Not yet tested
+};
+
+// ─── Ad quality score for ranking (lower = more ad-friendly) ──────────────
+export const AD_QUALITY_SCORE = {
+  [AD_QUALITY.CLEAN]:         0,
+  [AD_QUALITY.LOW_ADS]:       1,
+  [AD_QUALITY.MODERATE_ADS]:  2,
+  [AD_QUALITY.EXCESSIVE_ADS]: 3,
+  [AD_QUALITY.UNKNOWN]:       2,  // Treat unknown as moderate-level risk
+};
+
+// ─── Human-readable labels for UI ─────────────────────────────────────────
+export const AD_QUALITY_LABEL = {
+  [AD_QUALITY.CLEAN]:         "No Ads",
+  [AD_QUALITY.LOW_ADS]:       "Low Ads",
+  [AD_QUALITY.MODERATE_ADS]:  "Moderate Ads",
+  [AD_QUALITY.EXCESSIVE_ADS]: "Excessive Ads",
+  [AD_QUALITY.UNKNOWN]:       "Unknown Ads",
+};
+
+// ─── CSS badge class for each tier ────────────────────────────────────────
+export const AD_QUALITY_CLASS = {
+  [AD_QUALITY.CLEAN]:         "ad-clean",
+  [AD_QUALITY.LOW_ADS]:       "ad-low",
+  [AD_QUALITY.MODERATE_ADS]:  "ad-moderate",
+  [AD_QUALITY.EXCESSIVE_ADS]: "ad-excessive",
+  [AD_QUALITY.UNKNOWN]:       "ad-unknown",
+};
+
 export const CONTENT_TYPES = {
   ANIME: "anime",
   MOVIE: "movie",
   BOTH:  "both",
 };
 
+// ─── Provider Registry ────────────────────────────────────────────────────
 export const SERVERS = [
   // ── Anime + Movie servers supporting both SUB and DUB ─────────────────────
+  {
+    id: "vidlink",
+    name: "VidLink HD",
+    quality: "1080p Ultra HD",
+    badge: "1080p Ultra",
+    badgeClass: "badge-fhd",
+    tag: "Minimal Ads · Fast",
+    recommended: true,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id) => `https://vidlink.pro/movie/${id}`,
+    tv: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
+  },
   {
     id: "vidsrcto",
     name: "VidSrc TO",
     quality: "1080p Full HD",
     badge: "1080p HD",
     badgeClass: "badge-fhd",
-    tag: "High Stability · Fast",
+    tag: "High Stability",
     recommended: true,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.MODERATE_ADS,
     movie: (id) => `https://vidsrc.to/embed/movie/${id}`,
     tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
   },
@@ -47,11 +102,12 @@ export const SERVERS = [
     quality: "1080p Full HD",
     badge: "1080p HD",
     badgeClass: "badge-fhd",
-    tag: "Direct Stream · No Ads",
-    recommended: true,
+    tag: "Backup Mirror",
+    recommended: false,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.EXCESSIVE_ADS,
     movie: (id, imdb) =>
       `https://vidsrc.me/embed/movie?tmdb=${id}${imdb ? `&imdb=${imdb}` : ""}`,
     tv: (id, s, e, imdb) =>
@@ -69,6 +125,7 @@ export const SERVERS = [
     contentTypes: [CONTENT_TYPES.ANIME],
     supports: { sub: true, dub: false },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
     movie: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
     tv: (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}`,
   },
@@ -82,6 +139,7 @@ export const SERVERS = [
     contentTypes: [CONTENT_TYPES.ANIME],
     supports: { sub: true, dub: false },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
     movie: (id) => `https://embed.su/embed/movie/${id}`,
     tv: (id, s, e) => `https://embed.su/embed/tv/${id}/${s}/${e}`,
   },
@@ -97,6 +155,7 @@ export const SERVERS = [
     contentTypes: [CONTENT_TYPES.MOVIE],
     supports: { sub: true, dub: true },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.EXCESSIVE_ADS,
     movie: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
     tv: (id, s, e) =>
       `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`,
@@ -111,6 +170,7 @@ export const SERVERS = [
     contentTypes: [CONTENT_TYPES.MOVIE],
     supports: { sub: true, dub: false },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
     movie: (id) => `https://player.videasy.net/movie/${id}`,
     tv: (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
@@ -124,6 +184,7 @@ export const SERVERS = [
     contentTypes: [CONTENT_TYPES.MOVIE],
     supports: { sub: true, dub: false },
     health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.MODERATE_ADS,
     movie: (id) => `https://www.2embed.skin/embed/${id}`,
     tv: (id, s, e) => `https://www.2embed.skin/embedtv/${id}&s=${s}&e=${e}`,
   },
@@ -138,7 +199,8 @@ export const SERVERS = [
     tag: "Simulated Broken Video Source",
     contentTypes: [CONTENT_TYPES.ANIME],
     supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.UNAVAILABLE, // Automatically hidden from playable servers
+    health: SERVER_HEALTH.UNAVAILABLE,
+    adQuality: AD_QUALITY.UNKNOWN,
     movie: () => "https://invalid-stream.example.com/broken-anime-movie",
     tv: () => "https://invalid-stream.example.com/broken-anime-manifest.m3u8",
   },
@@ -151,7 +213,8 @@ export const SERVERS = [
     tag: "Simulated Missing Stream Token",
     contentTypes: [CONTENT_TYPES.MOVIE],
     supports: { sub: true, dub: true },
-    health: SERVER_HEALTH.UNAVAILABLE, // Automatically hidden from playable servers
+    health: SERVER_HEALTH.UNAVAILABLE,
+    adQuality: AD_QUALITY.UNKNOWN,
     movie: () => "https://invalid-stream.example.com/unavailable-movie",
     tv: () => "https://invalid-stream.example.com/unavailable-tv",
   },
@@ -164,7 +227,8 @@ export const SERVERS = [
     tag: "Simulated Down Host",
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
-    health: SERVER_HEALTH.OFFLINE, // Automatically hidden from playable servers
+    health: SERVER_HEALTH.OFFLINE,
+    adQuality: AD_QUALITY.UNKNOWN,
     movie: () => "https://offline-down-server-example-999.xyz/movie",
     tv: () => "https://offline-down-server-example-999.xyz/tv",
   },
@@ -177,12 +241,14 @@ export const SERVERS = [
     tag: "Slow CDN / High Latency",
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.DEGRADED, // Playable with warning indicator
+    health: SERVER_HEALTH.DEGRADED,
+    adQuality: AD_QUALITY.UNKNOWN,
     movie: (id) => `https://vidsrc.to/embed/movie/${id}`,
     tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
   },
 ];
 
+// ─── Runtime-mutable health state ─────────────────────────────────────────
 /**
  * Server health state — runtime-mutable map of { [serverId]: SERVER_HEALTH }.
  */
@@ -206,15 +272,44 @@ export function getServerHealth(serverId) {
 }
 
 /**
- * Checks whether a server is considered "playable".
- * Playable states:
- *   - WORKING: Confirmed working
- *   - UNVERIFIED: Reached in browser (CORS-restricted, treated as active/playable)
- *   - DEGRADED: High latency (playable with warning)
- * Non-playable states:
- *   - UNAVAILABLE: Online host, but specific media manifest is broken/missing/404
- *   - OFFLINE: Host down / DNS fail
+ * Returns the ad quality of a server by id.
  */
+export function getServerAdQuality(serverId) {
+  const srv = SERVERS.find((s) => s.id === serverId);
+  return srv?.adQuality ?? AD_QUALITY.UNKNOWN;
+}
+
+/**
+ * Returns whether a provider's ad quality is acceptable for auto-selection.
+ * EXCESSIVE_ADS providers are NEVER auto-selected; they can still be manually chosen.
+ */
+export function isAdQualityAcceptable(adQuality) {
+  return (
+    adQuality === AD_QUALITY.CLEAN ||
+    adQuality === AD_QUALITY.LOW_ADS ||
+    adQuality === AD_QUALITY.MODERATE_ADS ||
+    adQuality === AD_QUALITY.UNKNOWN
+  );
+}
+
+/**
+ * Checks whether a server is considered "playable" based on health alone.
+ * Playable states: WORKING, UNVERIFIED, DEGRADED
+ * Non-playable states: UNAVAILABLE, OFFLINE
+ */
+export function isServerPlayable(serverIdOrHealth) {
+  if (!serverIdOrHealth) return false;
+  const status = Object.values(SERVER_HEALTH).includes(serverIdOrHealth)
+    ? serverIdOrHealth
+    : getServerHealth(serverIdOrHealth);
+
+  return (
+    status === SERVER_HEALTH.WORKING ||
+    status === SERVER_HEALTH.UNVERIFIED ||
+    status === SERVER_HEALTH.DEGRADED
+  );
+}
+
 /**
  * Generates a unique key for evaluating title/episode-specific source health.
  */
@@ -234,27 +329,15 @@ export function getSourceHealthKey({
   return `${baseServerId}:movie:${id}:${categoryKey}`;
 }
 
-export function isServerPlayable(serverIdOrHealth) {
-  if (!serverIdOrHealth) return false;
-  const status = Object.values(SERVER_HEALTH).includes(serverIdOrHealth)
-    ? serverIdOrHealth
-    : getServerHealth(serverIdOrHealth);
-
-  return (
-    status === SERVER_HEALTH.WORKING ||
-    status === SERVER_HEALTH.UNVERIFIED ||
-    status === SERVER_HEALTH.DEGRADED
-  );
-}
-
 /**
  * Returns a filtered list of servers based on:
  *   - contentType: 'anime' | 'movie'
  *   - audioType: 'sub' | 'dub' | null (null = no audio filter)
+ *   - allowExcessiveAds: defaults to false — hides EXCESSIVE_ADS providers from auto-selection
  *
  * Only returns servers that support the content and are currently PLAYABLE.
  */
-export function getServersForContent(contentType, audioType = null) {
+export function getServersForContent(contentType, audioType = null, allowExcessiveAds = false) {
   return SERVERS.filter((srv) => {
     // 1. Content type match
     const typeMatch =
@@ -270,12 +353,16 @@ export function getServersForContent(contentType, audioType = null) {
     // 3. Health & playability check
     if (!isServerPlayable(srv.id)) return false;
 
+    // 4. Ad quality gate — skip EXCESSIVE_ADS providers for auto-selection
+    if (!allowExcessiveAds && srv.adQuality === AD_QUALITY.EXCESSIVE_ADS) return false;
+
     return true;
   });
 }
 
 /**
  * Builds a source entry from a server definition for a specific piece of content.
+ * Includes adQuality so UI and ranking can use it.
  */
 export function buildSourceEntry(srv, { type, id, imdbId, season, episode, subtitles = [] }) {
   const url = type === "tv"
@@ -290,6 +377,8 @@ export function buildSourceEntry(srv, { type, id, imdbId, season, episode, subti
     badgeClass: srv.badgeClass,
     tag: srv.tag,
     health: getServerHealth(srv.id),
+    adQuality: srv.adQuality ?? AD_QUALITY.UNKNOWN,
+    recommended: srv.recommended ?? false,
     url,
     subtitles,
   };
@@ -298,6 +387,7 @@ export function buildSourceEntry(srv, { type, id, imdbId, season, episode, subti
 /**
  * Generates dynamic SUB, S-SUB, DUB categories for any standard TMDB content.
  * Uses server capability (contentTypes + supports) + health filtering.
+ * Providers with EXCESSIVE_ADS are excluded from the default pool.
  */
 export function generateDynamicCategories({
   contentType,  // 'anime' | 'movie'

@@ -31,7 +31,10 @@ import {
   Calendar,
   Layers,
   Server,
-  WifiOff,
+  ShieldCheck,
+  Bell,
+  LogOut,
+  Bookmark,
 } from "lucide-react";
 import {
   getMovie,
@@ -45,15 +48,16 @@ import {
   getOfficialTrailerUrl,
 } from "./lib/tmdb";
 import { authConfigured, signInWithProvider, supabase } from "./lib/supabase";
-import { getEmbedUrl, isServerPlayable, getSourceHealthKey } from "./data/sources";
+import { getEmbedUrl, isServerPlayable, getSourceHealthKey, AD_QUALITY, isAdQualityAcceptable } from "./data/sources";
 import { reportRuntimePlaybackIssue, getSourceHealth } from "./data/serverHealthService";
 import EnhancedEmbedPlayer from "./components/EnhancedEmbedPlayer";
 import AutoNextOverlay from "./components/AutoNextOverlay";
 import SkipTimingsOverlay from "./components/SkipTimingsOverlay";
-import { rankSources, getBestSourceIndex } from "./utils/serverRanking";
+import { rankSources, getBestSourceIndex, allSourcesExcessive } from "./utils/serverRanking";
 import { useServerHealth } from "./utils/useServerHealth";
 import {
   getWatchProgress,
+  getAllWatchProgress,
   setPreferredServer,
   setPreferredAudio,
   getPreferredAudio,
@@ -72,6 +76,11 @@ import StreamingSources from "./components/StreamingSources";
 import SubtitleSelector from "./components/SubtitleSelector";
 import UpcomingOverlay from "./components/UpcomingOverlay";
 import EpisodeAvailability from "./components/EpisodeAvailability";
+import NotificationPanel from "./components/NotificationPanel";
+import { useNotifications } from "./utils/useNotifications";
+import LegalWatchProviders from "./components/LegalWatchProviders";
+import MediaWatchlistTracker from "./components/MediaWatchlistTracker";
+import WatchlistDashboard from "./components/WatchlistDashboard";
 
 const fallback = "https://placehold.co/600x900/101217/ffffff?text=No+Poster";
 
@@ -247,10 +256,40 @@ function NavSearch() {
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
 function Layout({ children }) {
   const session = useAuth();
+  const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const notifRef = useRef(null);
+
+  const {
+    notifications,
+    readIds,
+    unreadCount,
+    markAsRead,
+    markAllRead,
+  } = useNotifications();
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   async function logout() {
-    if (supabase) await supabase.auth.signOut();
+    setDropdownOpen(false);
+    if (supabase) {
+      await supabase.auth.signOut();
+      navigate("/", { replace: true });
+    }
   }
 
   return (
@@ -269,10 +308,93 @@ function Layout({ children }) {
         </nav>
         <NavSearch />
         <div className="account-actions">
-          {session ? (
-            <button className="avatar-btn" title="Sign out" onClick={logout}>
-              <User size={18} />
+          {/* Notification Bell Dropdown */}
+          <div className="notification-dropdown-container" ref={notifRef}>
+            <button
+              className={`notification-btn ${notifOpen ? "active" : ""}`}
+              onClick={() => {
+                setNotifOpen((v) => !v);
+                setDropdownOpen(false);
+              }}
+              title="Release Notifications"
+              aria-label="Release Notifications"
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span className="notification-badge">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </button>
+
+            {notifOpen && (
+              <NotificationPanel
+                notifications={notifications}
+                readIds={readIds}
+                unreadCount={unreadCount}
+                onMarkAsRead={markAsRead}
+                onMarkAllRead={markAllRead}
+                onClose={() => setNotifOpen(false)}
+                isDropdown={true}
+              />
+            )}
+          </div>
+
+          {session ? (
+            <div className="avatar-dropdown-container" ref={dropdownRef}>
+              <button 
+                className="avatar-btn" 
+                onClick={() => {
+                  setDropdownOpen(!dropdownOpen);
+                  setNotifOpen(false);
+                }}
+                onMouseEnter={() => setDropdownOpen(true)}
+                title="Account Menu"
+              >
+                {session.user?.user_metadata?.avatar_url ? (
+                  <img
+                    src={session.user.user_metadata.avatar_url}
+                    alt="Avatar"
+                    style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <User size={18} />
+                )}
+              </button>
+              
+              {dropdownOpen && (
+                <div className="avatar-dropdown-menu" onMouseLeave={() => setDropdownOpen(false)}>
+                  <div className="dropdown-header">
+                    <div className="dropdown-name">{session.user?.user_metadata?.full_name || session.user?.user_metadata?.name || "Guest"}</div>
+                    <div className="dropdown-email">{session.user?.email}</div>
+                  </div>
+                  <div className="dropdown-divider"></div>
+                  <Link to="/profile?tab=overview" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                    <User size={16} /> Profile
+                  </Link>
+                  <Link to="/profile?tab=continue" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                    <Play size={16} /> Continue Watching
+                  </Link>
+                  <Link to="/profile?tab=watchlist" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                    <Bookmark size={16} /> Watch List
+                  </Link>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      setNotifOpen(true);
+                    }}
+                  >
+                    <Bell size={16} /> Notifications
+                    {unreadCount > 0 && <span className="dropdown-unread-pill">{unreadCount}</span>}
+                  </button>
+                  <div className="dropdown-divider"></div>
+                  <button className="dropdown-item text-red" onClick={logout}>
+                    <LogOut size={16} /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <Link className="login-btn" to="/login">
               <LogIn size={17} /> Sign in
@@ -584,8 +706,8 @@ function EmbedPlayer({ url, reloadKey, isTrailer = false }) {
         key={`${url}-${reloadKey}`}
         className={`video ${isIframeLoading ? "loading" : "ready"}`}
         src={url}
+        allow="autoplay; fullscreen; picture-in-picture; encrypted-media; accelerometer; gyroscope; clipboard-write; web-share"
         allowFullScreen
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
         referrerPolicy="origin-when-cross-origin"
         onLoad={() => setIsIframeLoading(false)}
         title={isTrailer ? "Official HD Trailer" : "Video Player"}
@@ -1002,6 +1124,12 @@ function WatchPage() {
                 {isTrailerActive ? "Trailer" : currentServer.badge}
               </span>
             )}
+            {isCurrentCategoryAvailable && !isTrailerActive && (
+              <span className="player-shield-indicator" title="Ad Shield Active - Popups & Redirects Blocked">
+                <ShieldCheck size={12} />
+                <span>Ad Shield</span>
+              </span>
+            )}
             <span className="player-server-name">
               {isTrailerActive
                 ? "Official Trailer"
@@ -1065,6 +1193,7 @@ function WatchPage() {
               mediaTitle={title}
               season={season}
               episode={episode}
+              posterPath={media?.poster_path}
               onManualReload={handleReloadStream}
             />
           ) : isCurrentCategoryAvailable && currentServer?.url && serverIdx >= 0 ? (
@@ -1081,6 +1210,7 @@ function WatchPage() {
               mediaTitle={title || ""}
               season={season}
               episode={episode}
+              posterPath={media?.poster_path}
               hasNextEpisode={hasNextEp}
               nextEpisodeNumber={episode + 1}
               nextEpisodeTitle={seasonData?.episodes?.find(ep => ep.episode_number === episode + 1)?.name || ""}
@@ -1196,7 +1326,30 @@ function WatchPage() {
           <p className="media-synopsis">
             {media.overview || "No overview available."}
           </p>
+
+          {/* ── Watchlist Tracker (add to list / rate / track episodes) ── */}
+          <div style={{ marginTop: 16 }}>
+            <MediaWatchlistTracker
+              media={{
+                ...media,
+                tmdb_id: media.id,
+                media_type: type,
+                isAnime: contentType === "anime",
+              }}
+              mediaType={contentType === "anime" ? "anime" : type}
+              totalEpisodes={media.number_of_episodes || media.episodes || null}
+            />
+          </div>
         </div>
+
+        {/* ── Legal Streaming Options (TMDB JustWatch) — movies & TV only ── */}
+        {(type === "movie" || (type === "tv" && contentType !== "anime")) && (
+          <LegalWatchProviders
+            mediaType={type}
+            mediaId={media.id}
+            mediaTitle={title}
+          />
+        )}
 
         {/* ── TV Episodes List with Real-Time Availability ── */}
         {type === "tv" && (
@@ -1307,9 +1460,85 @@ function WatchPage() {
 }
 
 
+/* ─── Auth Callback ──────────────────────────────────────────────────────── */
+function AuthCallback() {
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!supabase) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    // Supabase automatically picks up the tokens from the URL hash/query
+    // when we call getSession or when onAuthStateChange fires.
+    // We just need to wait for the session to be established and then redirect.
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        // Small delay to ensure session is fully persisted
+        setTimeout(() => navigate("/", { replace: true }), 150);
+      }
+    });
+
+    // Also check if session is already established (e.g. from the hash)
+    supabase.auth.getSession().then(({ data: { session }, error: err }) => {
+      if (err) {
+        setError(err.message);
+      } else if (session) {
+        navigate("/", { replace: true });
+      }
+    });
+
+    // Safety timeout — if nothing happens within 10s, show an error
+    const timeout = setTimeout(() => {
+      setError("Authentication timed out. Please try signing in again.");
+    }, 10000);
+
+    return () => {
+      listener.subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [navigate]);
+
+  if (error) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="brand big">
+            <span className="brand-mark">A</span> Ani<span>kai</span>
+          </div>
+          <h1>Sign-in failed</h1>
+          <Notice text={error} />
+          <Link className="primary-btn" to="/login" style={{ marginTop: 16, display: "inline-flex" }}>
+            Try again
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card" style={{ textAlign: "center" }}>
+        <LoaderCircle className="spin" size={36} style={{ margin: "0 auto 16px" }} />
+        <h1 style={{ fontSize: 22 }}>Signing you in...</h1>
+        <p>Completing authentication with Google.</p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Login ──────────────────────────────────────────────────────────────── */
 function Login() {
+  const session = useAuth();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState("");
+
+  useEffect(() => {
+    if (session) navigate("/", { replace: true });
+  }, [session, navigate]);
+
   async function oauth(provider) {
     setBusy(provider);
     try {
@@ -1365,29 +1594,168 @@ function Login() {
 /* ─── Profile ────────────────────────────────────────────────────────────── */
 function Profile() {
   const session = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "continue";
+  const [activeTab, setActiveTab] = useState(initialTab);
+  
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && ["overview", "continue", "history", "watchlist", "favorites"].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
+  
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
+  const fullName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name;
+  const email = session?.user?.email;
+  
+  const memberSince = session?.user?.created_at 
+    ? new Date(session.user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) 
+    : "Recently";
+
+  useEffect(() => {
+    if (!session && supabase) {
+      const timer = setTimeout(() => {
+        if (!session) navigate("/login", { replace: true });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [session, navigate]);
+
+  async function logout() {
+    if (supabase) {
+      await supabase.auth.signOut();
+      navigate("/", { replace: true });
+    }
+  }
+
+  const allProgress = Object.values(getAllWatchProgress()).sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (!session) {
+    return <div className="container page"><LoaderCircle className="spin" size={32} style={{margin: "auto", display: "block", marginTop: "10vh", color: "#8b8d9c"}}/></div>;
+  }
+
   return (
-    <div className="container page">
-      <div className="profile-card">
-        <div className="profile-avatar">
-          <User size={36} />
+    <div className="profile-page-modern">
+      {/* Banner & Header */}
+      <div className="profile-banner">
+        <div className="profile-banner-overlay"></div>
+      </div>
+      
+      <div className="container profile-header-container">
+        <div className="profile-header-info">
+          <div className="profile-avatar-large">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" />
+            ) : (
+              <User size={50} />
+            )}
+          </div>
+          <div className="profile-text-details">
+            <h1>{fullName || email || "Guest"}</h1>
+            <p className="profile-email">{email}</p>
+            <p className="profile-joined">Member since {memberSince}</p>
+          </div>
         </div>
-        <div>
-          <div className="eyebrow">Account</div>
-          <h1>
-            {session?.user?.user_metadata?.name ||
-              session?.user?.email ||
-              "Guest"}
-          </h1>
-          <p>{session?.user?.email || "Sign in to view your account."}</p>
+        
+        <div className="profile-actions">
+          <button className="ghost-btn edit-profile-btn" onClick={() => alert("Edit profile feature coming soon!")}>
+            Edit Profile
+          </button>
+          <button className="primary-btn logout-btn" onClick={logout}>
+            Sign out
+          </button>
         </div>
       </div>
-      <div className="empty-state">
-        <Plus size={28} />
-        <h2>Your list is ready</h2>
-        <p>
-          Favorites and watch history can be stored per user once your Supabase
-          database tables are configured.
-        </p>
+
+      {/* Tabs */}
+      <div className="container profile-tabs-container">
+        <div className="profile-tabs">
+          {["overview", "continue", "history", "watchlist", "favorites"].map(tab => (
+            <button 
+              key={tab} 
+              className={`profile-tab ${activeTab === tab ? "active" : ""}`}
+              onClick={() => handleTabChange(tab)}
+            >
+              {tab === "continue" ? "Continue Watching" : 
+               tab === "history" ? "Watch History" : 
+               tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="container profile-content">
+        {activeTab === "continue" && (
+          <div className="profile-continue-section">
+            {allProgress.length > 0 ? (
+              <div className="continue-grid">
+                {allProgress.map(prog => {
+                  const isTV = prog.type === 'tv' || prog.type === 'anime';
+                  const posterImg = prog.posterPath 
+                    ? (prog.posterPath.startsWith("http") ? prog.posterPath : `https://image.tmdb.org/t/p/w500${prog.posterPath}`) 
+                    : "https://placehold.co/600x900/101217/ffffff?text=No+Poster";
+                  
+                  return (
+                    <div key={prog.key} className="continue-card">
+                      <div className="continue-poster">
+                        <img loading="lazy" src={posterImg} alt={prog.title} />
+                        <div className="continue-overlay">
+                          <Link to={`/watch/${prog.type}/${prog.id}?s=${prog.season}&e=${prog.episode}`} className="play-circle">
+                            <Play fill="white" size={24} />
+                          </Link>
+                        </div>
+                        <div className="continue-progress-bar">
+                          <div className="continue-progress-fill" style={{ width: `${prog.progressPercent}%` }}></div>
+                        </div>
+                      </div>
+                      <div className="continue-info">
+                        <h3>{prog.title}</h3>
+                        <p className="continue-meta">
+                          {isTV ? `S${prog.season} • E${prog.episode}` : "Movie"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Clock size={32} />
+                <h3>No Watch History</h3>
+                <p>Start watching some movies or shows and they will appear here.</p>
+                <Link to="/" className="primary-btn" style={{marginTop: 16, display: "inline-flex"}}>Explore Content</Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Watchlist Dashboard (Polymorphic — movies, TV, anime) ── */}
+        {activeTab === "watchlist" && (
+          <WatchlistDashboard
+            onSelectMedia={(item) => {
+              const routeType = item.media_type === "anime" ? "tv" : (item.media_type || "movie");
+              const mediaId = item.tmdb_id || item.anilist_id || item.media_id;
+              navigate(`/watch/${routeType}/${mediaId}`);
+            }}
+          />
+        )}
+
+        {/* Other tabs placeholders */}
+        {activeTab !== "continue" && activeTab !== "watchlist" && (
+          <div className="empty-state">
+            <Layers size={32} />
+            <h3>{activeTab === "history" ? "Watch History" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
+            <p>This feature will be available once your Supabase database tables are fully configured.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1449,6 +1817,39 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ─── Notifications ──────────────────────────────────────────────────────── */
+function Notifications() {
+  const {
+    notifications,
+    readIds,
+    unreadCount,
+    markAsRead,
+    markAllRead,
+  } = useNotifications();
+
+  return (
+    <div className="container page notif-center-page">
+      <div className="notif-page-heading-box">
+        <div className="notif-heading-text">
+          <h1>Release Notifications</h1>
+          <p>
+            Discover newly released anime episodes, movie premieres, and upcoming broadcast countdowns.
+          </p>
+        </div>
+      </div>
+
+      <NotificationPanel
+        notifications={notifications}
+        readIds={readIds}
+        unreadCount={unreadCount}
+        onMarkAsRead={markAsRead}
+        onMarkAllRead={markAllRead}
+        isDropdown={false}
+      />
+    </div>
+  );
+}
+
 /* ─── App ────────────────────────────────────────────────────────────────── */
 export default function App() {
   return (
@@ -1461,7 +1862,9 @@ export default function App() {
           <Route path="/search" element={<SearchPage />} />
           <Route path="/watch/:type/:id" element={<WatchPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route
             path="*"
             element={

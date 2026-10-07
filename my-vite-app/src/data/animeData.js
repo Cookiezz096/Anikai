@@ -77,6 +77,7 @@ export const CUSTOM_MEDIA_DATABASE = {
     title: "Solo Leveling (Ore dake Level Up na Ken)",
     type: "tv",
     contentType: "anime",
+    posterPath: "https://image.tmdb.org/t/p/w342/geCRueV3ElhRTr0xtJuClJ7xtOD.jpg",
     seasons: {
       1: {
         episodes: [
@@ -379,6 +380,7 @@ export const CUSTOM_MEDIA_DATABASE = {
     slug: "jujutsu-kaisen",
     title: "Jujutsu Kaisen",
     type: "tv",
+    posterPath: "https://image.tmdb.org/t/p/w342/fHpKWKq5jzbovG8f0vY1A39bLrq.jpg",
     seasons: {
       1: {
         episodes: [
@@ -472,6 +474,7 @@ export const CUSTOM_MEDIA_DATABASE = {
     slug: "suzume",
     title: "Suzume no Tojimari",
     type: "movie",
+    posterPath: "https://image.tmdb.org/t/p/w342/vIeu8WysZrTSm2FdbtFLxLliF61.jpg",
     sub: {
       status: STATUS_TYPES.AVAILABLE,
       releaseAt: pastDate,
@@ -525,6 +528,7 @@ export const CUSTOM_MEDIA_DATABASE = {
     slug: "chainsaw-man-movie",
     title: "Chainsaw Man – The Movie: Reze Arc",
     type: "movie",
+    posterPath: "https://image.tmdb.org/t/p/w342/npdB6eFz4qt9CdISEgLO3LwIER5.jpg",
     sub: {
       status: STATUS_TYPES.UPCOMING,
       releaseAt: inTomorrow,
@@ -554,6 +558,7 @@ export const CUSTOM_MEDIA_DATABASE = {
     slug: "deadpool-and-wolverine",
     title: "Deadpool & Wolverine",
     type: "movie",
+    posterPath: "https://image.tmdb.org/t/p/w342/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg",
     sub: {
       status: STATUS_TYPES.AVAILABLE,
       releaseAt: pastDate,
