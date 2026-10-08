@@ -4,7 +4,7 @@
  * Supports SUB, S-SUB, DUB with independent release times, countdowns, and WebVTT subtitle tracks.
  */
 
-import { generateDynamicCategories } from "./sources.js";
+import { generateDynamicCategories, applyAudioTrackToUrl } from "./sources.js";
 import { getCategoryStatus, STATUS_TYPES } from "../utils/releaseUtils.js";
 
 // Sample WebVTT subtitle tracks (supports English, Khmer, Chinese, Japanese, etc.)
@@ -586,6 +586,22 @@ export const CUSTOM_MEDIA_DATABASE = {
   },
 };
 
+// Map AniList IDs, TMDB TV/Movie IDs, and anime slugs as aliases
+CUSTOM_MEDIA_DATABASE["127532"] = CUSTOM_MEDIA_DATABASE["82452"]; // Solo Leveling (TMDB)
+CUSTOM_MEDIA_DATABASE["151807"] = CUSTOM_MEDIA_DATABASE["82452"]; // Solo Leveling (AniList)
+CUSTOM_MEDIA_DATABASE["solo-leveling"] = CUSTOM_MEDIA_DATABASE["82452"];
+
+CUSTOM_MEDIA_DATABASE["113415"] = CUSTOM_MEDIA_DATABASE["95479"]; // Jujutsu Kaisen (AniList)
+CUSTOM_MEDIA_DATABASE["jujutsu-kaisen"] = CUSTOM_MEDIA_DATABASE["95479"];
+
+CUSTOM_MEDIA_DATABASE["916224"] = CUSTOM_MEDIA_DATABASE["937278"]; // Suzume (TMDB)
+CUSTOM_MEDIA_DATABASE["142770"] = CUSTOM_MEDIA_DATABASE["937278"]; // Suzume (AniList)
+CUSTOM_MEDIA_DATABASE["suzume"] = CUSTOM_MEDIA_DATABASE["937278"];
+
+CUSTOM_MEDIA_DATABASE["114410"] = CUSTOM_MEDIA_DATABASE["chainsaw-man-movie"]; // Chainsaw Man (TMDB)
+CUSTOM_MEDIA_DATABASE["127230"] = CUSTOM_MEDIA_DATABASE["chainsaw-man-movie"]; // Chainsaw Man (AniList)
+CUSTOM_MEDIA_DATABASE["chainsaw-man"] = CUSTOM_MEDIA_DATABASE["chainsaw-man-movie"];
+
 /**
  * Resolves media release data for ANY media item (Custom Anime / Movie or standard TMDB item).
  * Generates structured SUB, S-SUB, DUB categories seamlessly.
@@ -615,9 +631,9 @@ export function getMediaReleaseData({
           title: episodeConfig.title,
           overview: episodeConfig.overview,
           rating: episodeConfig.rating,
-          sub: episodeConfig.sub ? validateCategoryConfig(episodeConfig.sub) : null,
-          ssub: episodeConfig.ssub ? validateCategoryConfig(episodeConfig.ssub) : null,
-          dub: episodeConfig.dub ? validateCategoryConfig(episodeConfig.dub) : null,
+          sub: episodeConfig.sub ? validateCategoryConfig(episodeConfig.sub, "sub") : null,
+          ssub: episodeConfig.ssub ? validateCategoryConfig(episodeConfig.ssub, "ssub") : null,
+          dub: episodeConfig.dub ? validateCategoryConfig(episodeConfig.dub, "dub") : null,
         };
       }
     } else {
@@ -625,9 +641,9 @@ export function getMediaReleaseData({
       return {
         isCustom: true,
         title: customMedia.title,
-        sub: customMedia.sub ? validateCategoryConfig(customMedia.sub) : null,
-        ssub: customMedia.ssub ? validateCategoryConfig(customMedia.ssub) : null,
-        dub: customMedia.dub ? validateCategoryConfig(customMedia.dub) : null,
+        sub: customMedia.sub ? validateCategoryConfig(customMedia.sub, "sub") : null,
+        ssub: customMedia.ssub ? validateCategoryConfig(customMedia.ssub, "ssub") : null,
+        dub: customMedia.dub ? validateCategoryConfig(customMedia.dub, "dub") : null,
       };
     }
   }
@@ -648,24 +664,37 @@ export function getMediaReleaseData({
 
 /**
  * Validates a category configuration to ensure safe rendering without crashes.
+ * Automatically appends audio parameter (SUB / DUB) and ensures alternative
+ * multi-server array fields (Server 1, Server 2, Server 3) are populated.
  */
-function validateCategoryConfig(cat) {
+function validateCategoryConfig(cat, categoryKey = "sub") {
   if (!cat) return null;
   const status = getCategoryStatus(cat);
+  const rawSources = Array.isArray(cat.sources) ? cat.sources : [];
+
+  const sources = rawSources.map((s, idx) => {
+    const rawUrl = s.url || "";
+    const url = applyAudioTrackToUrl(rawUrl, categoryKey);
+    const serverNum = idx + 1;
+    const cleanName = s.name ? s.name.replace(/^Server\s*\d+\s*[·•-]\s*/i, "") : `Mirror ${serverNum}`;
+
+    return {
+      id: s.id || `srv-${idx}-${categoryKey}`,
+      serverId: s.id || `srv-${idx}`,
+      name: `Server ${serverNum} · ${cleanName}`,
+      quality: s.quality || "1080p Full HD",
+      badge: categoryKey === "dub" ? "English DUB" : (s.badge || "1080p HD"),
+      badgeClass: s.badgeClass || (categoryKey === "dub" ? "badge-fhd" : "badge-hd"),
+      url,
+      subtitles: Array.isArray(s.subtitles) ? s.subtitles : [],
+      audioType: categoryKey,
+    };
+  });
+
   return {
     status,
     releaseAt: cat.releaseAt || null,
-    sources: Array.isArray(cat.sources)
-      ? cat.sources.map((s, idx) => ({
-          id: s.id || `srv-${idx}`,
-          name: s.name || `Server ${idx + 1}`,
-          quality: s.quality || "1080p Full HD",
-          badge: s.badge || "1080p HD",
-          badgeClass: s.badgeClass || "badge-fhd",
-          url: s.url || "",
-          subtitles: Array.isArray(s.subtitles) ? s.subtitles : [],
-        }))
-      : [],
+    sources,
   };
 }
 

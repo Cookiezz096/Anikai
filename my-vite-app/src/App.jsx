@@ -438,68 +438,91 @@ function Notice({ text }) {
 
 const FEATURED_ANIME_ITEMS = [
   {
-    id: "82452",
+    id: 127532,
+    tmdb_id: 127532,
+    anilist_id: 151807,
     media_type: "tv",
     title: "Solo Leveling",
-    poster_path: "/geCRueV3ElhRTr0xtJuCYJht8U8.jpg",
+    poster_path: "/geCRueV3ElhRTr0xtJuEWJt6dJ1.jpg",
     first_air_date: "2024",
     vote_average: 8.9,
     badge: "SUB / DUB",
   },
   {
-    id: "95479",
+    id: 95479,
+    tmdb_id: 95479,
+    anilist_id: 113415,
     media_type: "tv",
     title: "Jujutsu Kaisen",
-    poster_path: "/hFWP5DUFq5fDkdfq4OQz2HnZl1Y.jpg",
+    poster_path: "/6qQzMJG27XOJsyAEEIisoJB45j2.jpg",
     first_air_date: "2020",
     vote_average: 9.3,
     badge: "SUB / DUB",
   },
   {
-    id: "937278",
+    id: 916224,
+    tmdb_id: 916224,
+    anilist_id: 142770,
     media_type: "movie",
-    title: "Suzume no Tojimari",
-    poster_path: "/vI37R07b3lF9rO35F2kC5n65kS2.jpg",
+    title: "Suzume",
+    poster_path: "/yStW1TXF5s7Tbtu9KjIZEaWl6HL.jpg",
     release_date: "2022",
     vote_average: 8.5,
     badge: "SUB / DUB",
   },
   {
-    id: "chainsaw-man-movie",
-    media_type: "movie",
-    title: "Chainsaw Man – Reze Arc",
-    poster_path: "https://placehold.co/600x900/181a26/a991ff?text=Chainsaw+Man+Movie",
-    release_date: "2026",
-    vote_average: 9.5,
-    badge: "UPCOMING",
+    id: 114410,
+    tmdb_id: 114410,
+    anilist_id: 127230,
+    media_type: "tv",
+    title: "Chainsaw Man",
+    poster_path: "/npdB6eFzizki0WaZ1OvKcJrWe97.jpg",
+    first_air_date: "2022",
+    vote_average: 8.6,
+    badge: "SUB / DUB",
   },
   {
-    id: "533535",
-    media_type: "movie",
-    title: "Deadpool & Wolverine",
-    poster_path: "/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg",
-    release_date: "2024",
-    vote_average: 7.7,
-    badge: "SUB Available",
+    id: 85937,
+    tmdb_id: 85937,
+    anilist_id: 101922,
+    media_type: "tv",
+    title: "Demon Slayer: Kimetsu no Yaiba",
+    poster_path: "/xUfRZu2mi8jH6SzQEJGP6tjBuYj.jpg",
+    first_air_date: "2019",
+    vote_average: 8.7,
+    badge: "SUB / DUB",
+  },
+  {
+    id: 1429,
+    tmdb_id: 1429,
+    anilist_id: 16498,
+    media_type: "tv",
+    title: "Attack on Titan",
+    poster_path: "/hTP1DtLGFamjfu8WqjnuQdP1n4i.jpg",
+    first_air_date: "2013",
+    vote_average: 9.1,
+    badge: "SUB / DUB",
   },
 ];
 
 /* ─── Media card ─────────────────────────────────────────────────────────── */
 function MediaCard({ item, customBadge = null }) {
-  const type = item.media_type || (item.first_air_date ? "tv" : "movie");
-  const title = item.title || item.name;
-  const custom = CUSTOM_MEDIA_DATABASE[String(item.id)];
+  const type = item.media_type === "anime" ? "tv" : (item.media_type || (item.first_air_date ? "tv" : "movie"));
+  const mediaId = item.tmdb_id || item.id || item.anilist_id;
+  const title = item.title || item.name || item.title?.english || item.title?.romaji;
+  const custom = CUSTOM_MEDIA_DATABASE[String(mediaId)] || CUSTOM_MEDIA_DATABASE[String(item.id)];
   const badgeLabel =
     customBadge || item.badge || (custom ? "SUB/DUB" : "HD");
 
-  const posterSrc = item.poster_path
-    ? item.poster_path.startsWith("http")
-      ? item.poster_path
-      : tmdbImage(item.poster_path, "w500")
+  const rawPoster = item.poster_path || item.coverImage?.large || item.coverImage?.extraLarge || item.coverImage;
+  const posterSrc = rawPoster
+    ? (typeof rawPoster === "string" && rawPoster.startsWith("http"))
+      ? rawPoster
+      : tmdbImage(rawPoster, "w500")
     : fallback;
 
   return (
-    <Link className="media-card" to={`/watch/${type}/${item.id}`}>
+    <Link className="media-card" to={`/watch/${type}/${mediaId}`}>
       <div className="poster-wrap">
         <img loading="lazy" src={posterSrc} alt={title} />
         <div className="poster-overlay">
@@ -509,8 +532,8 @@ function MediaCard({ item, customBadge = null }) {
       </div>
       <div className="card-title">{title}</div>
       <div className="card-meta">
-        {(item.release_date || item.first_air_date || "").slice(0, 4)}{" "}
-        {item.vote_average ? `• ★ ${item.vote_average.toFixed(1)}` : ""}
+        {(item.release_date || item.first_air_date || item.startDate?.year || "").toString().slice(0, 4)}{" "}
+        {item.vote_average ? `• ★ ${item.vote_average.toFixed(1)}` : item.averageScore ? `• ★ ${(item.averageScore / 10).toFixed(1)}` : ""}
       </div>
     </Link>
   );
@@ -1076,7 +1099,9 @@ function WatchPage() {
   }
 
   function handleManualSelectServer(catKey, index, srv) {
-    setActiveCategoryKey(catKey);
+    const rawKey = String(catKey || "sub").toLowerCase().replace("-", "");
+    const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
+    setActiveCategoryKey(safeKey);
     setServerIdx(index);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
@@ -1085,16 +1110,22 @@ function WatchPage() {
     if (srv?.id) {
       setPreferredServer(srv.id);
     }
+    // Immediately reload video iframe src with chosen server and audio track without full page reload
+    setReloadKey((prev) => prev + 1);
   }
 
   function handleSelectCategory(catKey) {
-    setActiveCategoryKey(catKey);
+    const rawKey = String(catKey || "sub").toLowerCase().replace("-", "");
+    const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
+    setActiveCategoryKey(safeKey);
     setServerIdx(0);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
     setFailoverAttempt(0);
     failoverInProgress.current = false;
-    setPreferredAudio(catKey);
+    setPreferredAudio(safeKey);
+    // Immediately reload video iframe src with newly selected audio track without full page reload
+    setReloadKey((prev) => prev + 1);
   }
 
   return (
@@ -1107,9 +1138,39 @@ function WatchPage() {
         {/* ── Compact Player Controls Header ── */}
         <div className="player-top-bar">
           <div className="player-meta-left">
-            <span className="category-type-pill">
-              {resolvedCategoryKey.toUpperCase()}
-            </span>
+            {/* ── Dedicated SUB / DUB Audio Toggle Buttons ── */}
+            <div className="player-audio-toggle-group" style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
+              <button
+                type="button"
+                className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "sub" ? "active" : ""}`}
+                onClick={() => handleSelectCategory("sub")}
+                title="Switch to Japanese Audio with English Subtitles (SUB)"
+                style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+              >
+                SUB
+              </button>
+              <button
+                type="button"
+                className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "dub" ? "active" : ""}`}
+                onClick={() => handleSelectCategory("dub")}
+                title="Switch to English Dubbed Audio (DUB)"
+                style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+              >
+                DUB
+              </button>
+              {ssubConfig && (
+                <button
+                  type="button"
+                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "ssub" ? "active" : ""}`}
+                  onClick={() => handleSelectCategory("ssub")}
+                  title="Switch to Soft-Subtitles (S-SUB)"
+                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+                >
+                  S-SUB
+                </button>
+              )}
+            </div>
+
             <ReleaseStatusBadge
               status={activeCategoryStatus}
               targetDate={activeCatConfig?.releaseAt}

@@ -361,33 +361,82 @@ export function getServersForContent(contentType, audioType = null, allowExcessi
 }
 
 /**
- * Builds a source entry from a server definition for a specific piece of content.
- * Includes adQuality so UI and ranking can use it.
+ * Safely appends or updates the audio track / language query parameter on an embed URL.
+ * Preserves existing URL parameters (e.g. tmdb, imdb, seasons, etc.) while guaranteeing
+ * that SUB and DUB generate distinct, working streaming endpoints.
  */
-export function buildSourceEntry(srv, { type, id, imdbId, season, episode, subtitles = [] }) {
-  const url = type === "tv"
+export function applyAudioTrackToUrl(rawUrl, audioType = "sub") {
+  if (!rawUrl) return "";
+  const typeKey = String(audioType).toLowerCase();
+  try {
+    const urlObj = new URL(rawUrl);
+    urlObj.searchParams.delete("sub");
+    urlObj.searchParams.delete("dub");
+    urlObj.searchParams.delete("audio");
+    urlObj.searchParams.delete("ssub");
+
+    if (typeKey === "dub") {
+      urlObj.searchParams.set("dub", "1");
+      urlObj.searchParams.set("audio", "dub");
+    } else if (typeKey === "ssub") {
+      urlObj.searchParams.set("sub", "1");
+      urlObj.searchParams.set("audio", "sub");
+      urlObj.searchParams.set("ssub", "1");
+    } else {
+      urlObj.searchParams.set("sub", "1");
+      urlObj.searchParams.set("audio", "sub");
+    }
+    return urlObj.toString();
+  } catch {
+    const cleanUrl = rawUrl.replace(/[?&](sub|dub|audio|ssub)=[^&]*/g, "");
+    const separator = cleanUrl.includes("?") ? "&" : "?";
+    if (typeKey === "dub") {
+      return `${cleanUrl}${separator}audio=dub&dub=1`;
+    }
+    if (typeKey === "ssub") {
+      return `${cleanUrl}${separator}audio=sub&sub=1&ssub=1`;
+    }
+    return `${cleanUrl}${separator}audio=sub&sub=1`;
+  }
+}
+
+/**
+ * Builds a source entry from a server definition for a specific piece of content.
+ * Includes explicit audio parameter appending and formatted Server 1/2/3 labels.
+ */
+export function buildSourceEntry(
+  srv,
+  { type, id, imdbId, season, episode, subtitles = [], audioType = "sub" },
+  index = 0
+) {
+  let rawUrl = type === "tv"
     ? srv.tv(id, season, episode, imdbId)
     : srv.movie(id, imdbId);
 
+  const url = applyAudioTrackToUrl(rawUrl, audioType);
+  const serverNumber = index + 1;
+
   return {
-    id: srv.id,
-    name: srv.name,
-    quality: srv.quality,
-    badge: srv.badge,
-    badgeClass: srv.badgeClass,
+    id: `${srv.id}-${audioType}`,
+    serverId: srv.id,
+    name: `Server ${serverNumber} · ${srv.name}`,
+    quality: srv.quality || "1080p Full HD",
+    badge: audioType === "dub" ? "English DUB" : (srv.badge || "1080p HD"),
+    badgeClass: srv.badgeClass || "badge-fhd",
     tag: srv.tag,
     health: getServerHealth(srv.id),
     adQuality: srv.adQuality ?? AD_QUALITY.UNKNOWN,
     recommended: srv.recommended ?? false,
     url,
     subtitles,
+    audioType,
   };
 }
 
 /**
- * Generates dynamic SUB, S-SUB, DUB categories for any standard TMDB content.
+ * Generates dynamic SUB, S-SUB, DUB categories for any standard TMDB or anime content.
  * Uses server capability (contentTypes + supports) + health filtering.
- * Providers with EXCESSIVE_ADS are excluded from the default pool.
+ * Returns distinct multi-server arrays (Server 1, Server 2, Server 3) for each audio option.
  */
 export function generateDynamicCategories({
   contentType,  // 'anime' | 'movie'
@@ -401,20 +450,31 @@ export function generateDynamicCategories({
   const subServers = getServersForContent(contentType, "sub");
   const dubServers = getServersForContent(contentType, "dub");
 
-  const subSources = subServers.map((srv) =>
-    buildSourceEntry(srv, { type, id, imdbId, season, episode, subtitles })
+  // Fallback to general servers if dub-only pool is small
+  const safeDubServers = dubServers.length >= 3
+    ? dubServers
+    : [
+        ...dubServers,
+        ...subServers.filter((s) => !dubServers.some((d) => d.id === s.id)),
+      ].slice(0, 3);
+
+  const subSources = subServers.slice(0, 3).map((srv, idx) =>
+    buildSourceEntry(srv, { type, id, imdbId, season, episode, subtitles, audioType: "sub" }, idx)
   );
 
-  const dubSources = dubServers.map((srv) =>
-    buildSourceEntry(srv, { type, id, imdbId, season, episode })
+  const dubSources = safeDubServers.slice(0, 3).map((srv, idx) =>
+    buildSourceEntry(srv, { type, id, imdbId, season, episode, audioType: "dub" }, idx)
   );
 
   // S-SUB uses softsub/clean servers from SUB category
-  const ssubSources = subSources.slice(0, 2).map((src) => ({
+  const ssubSources = subSources.slice(0, 2).map((src, idx) => ({
     ...src,
     id: `${src.id}-ssub`,
-    badge: "SoftSub",
+    name: `Server ${idx + 1} · SoftSub Stream`,
+    url: applyAudioTrackToUrl(src.url, "ssub"),
+    badge: "SoftSub HD",
     badgeClass: "badge-hd",
+    audioType: "ssub",
   }));
 
   return {

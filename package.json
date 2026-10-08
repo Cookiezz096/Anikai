@@ -6,6 +6,15 @@
   "scripts": {
     "dev": "npm --prefix my-vite-app run dev",
     "build": "npm --prefix my-vite-app run build",
-    "preview": "npm --prefix my-vite-app run preview"
+    "preview": "npm --prefix my-vite-app run preview",
+    "backend": "nodemon server.js"
+  },
+  "dependencies": {
+    "@consumet/extensions": "^1.8.8",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
