@@ -5,9 +5,7 @@ import { STATUS_TYPES } from "../utils/releaseUtils";
 
 /**
  * StreamingSources Component
- * Renders the AnimeKai-style streaming servers panel.
- * Only displays an audio/subtitle category (SUB, S-SUB, DUB) when that
- * option is ACTUALLY AVAILABLE for the current content.
+ * Renders the multi-server streaming selector panel.
  */
 export default function StreamingSources({
   sourcesConfig = {},
@@ -48,11 +46,11 @@ export default function StreamingSources({
   }
 
   return (
-    <div className="server-panel animekai-server-panel">
+    <div className="server-panel">
       <div className="server-panel-header">
         <div className="server-header-title">
           <Server size={15} className="server-title-icon" />
-          <span className="server-title-text">SERVERS</span>
+          <span className="server-title-text">STREAMING SERVERS</span>
         </div>
 
         <div className="server-header-actions">
@@ -74,7 +72,7 @@ export default function StreamingSources({
         {hasSub && (
           <StreamingCategory
             categoryKey="sub"
-            categoryLabel="SUB"
+            categoryLabel="HD"
             categoryConfig={subConfig}
             activeCategoryKey={activeCategoryKey}
             activeServerIndex={activeServerIndex}
@@ -87,7 +85,7 @@ export default function StreamingSources({
         {hasSsub && (
           <StreamingCategory
             categoryKey="ssub"
-            categoryLabel="S-SUB"
+            categoryLabel="MIRROR"
             categoryConfig={ssubConfig}
             activeCategoryKey={activeCategoryKey}
             activeServerIndex={activeServerIndex}
@@ -100,7 +98,7 @@ export default function StreamingSources({
         {hasDub && (
           <StreamingCategory
             categoryKey="dub"
-            categoryLabel="DUB"
+            categoryLabel="MULTI"
             categoryConfig={dubConfig}
             activeCategoryKey={activeCategoryKey}
             activeServerIndex={activeServerIndex}

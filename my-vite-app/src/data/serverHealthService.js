@@ -17,15 +17,11 @@ const CACHE_PREFIX = "srv_health_v6_";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
 
 const REMOVED_DEAD_PROVIDERS = [
-  "vidlink",
-  "vidsrcto",
-  "vidsrcme",
-  "autoembed",
+  "vidsrcpro",
+  "vidsrccc",
+  "autoembedcc",
   "embedsu",
   "superembed",
-  "videasy",
-  "2embed",
-  "vidsrcpro",
   "smashystream",
   "moviesapi",
   "vidsrcin",

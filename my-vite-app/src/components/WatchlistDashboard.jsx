@@ -30,7 +30,6 @@ const TYPE_TABS = [
   { key: "all", label: "All Media", icon: Bookmark },
   { key: "movie", label: "Movies", icon: Film },
   { key: "tv", label: "TV Shows", icon: Tv },
-  { key: "anime", label: "Anime", icon: Sparkles },
 ];
 
 export default function WatchlistDashboard({ onSelectMedia }) {
@@ -87,7 +86,7 @@ export default function WatchlistDashboard({ onSelectMedia }) {
         <div>
           <h2 className="dashboard-main-heading">My Media Watchlist</h2>
           <p className="dashboard-subtext">
-            Track and synchronize your movies, TV series, and anime in one unified hub
+            Track and synchronize your movies and TV series in one unified hub
           </p>
         </div>
         <div className="dashboard-stats-strip">
@@ -221,7 +220,7 @@ export default function WatchlistDashboard({ onSelectMedia }) {
                       </div>
 
                       {/* Episode Progress Bar */}
-                      {(item.media_type === "tv" || item.media_type === "anime" || maxEps > 0) && (
+                      {(item.media_type === "tv" || maxEps > 0) && (
                         <div className="watchlist-progress-bar-container">
                           <div className="progress-bar-header">
                             <span>Progress</span>
@@ -282,7 +281,7 @@ export default function WatchlistDashboard({ onSelectMedia }) {
             <div className="watchlist-empty-state">
               <Bookmark size={40} className="empty-bookmark-icon" />
               <h3>No titles found in this view</h3>
-              <p>Add movies, television shows, or anime to track your viewing journey</p>
+              <p>Add movies or television shows to track your viewing journey</p>
             </div>
           )}
         </>

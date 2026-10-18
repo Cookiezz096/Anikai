@@ -1,10 +1,10 @@
 /**
  * notificationService.js
- * Universal release notification engine for Anikai.
+ * Universal release notification engine.
  * Automatically aggregates:
- * 1. New Episodes (Airing anime & TV series episodes, multi-audio releases)
- * 2. New Releases (Newly added Movies & Anime titles)
- * 3. Upcoming Releases (Scheduled episodes with countdowns, future anime & movie premieres)
+ * 1. New Episodes (Airing TV series episodes)
+ * 2. New Releases (Newly added Movies & TV titles)
+ * 3. Upcoming Releases (Scheduled episodes with countdowns, future movie & series premieres)
  */
 
 import {
@@ -12,7 +12,7 @@ import {
   getNowPlayingMovies,
   getUpcomingMovies,
   getTrending,
-  getDiscoverAnime,
+  getPopularTV,
   tmdbImage,
 } from "../lib/tmdb";
 import { CUSTOM_MEDIA_DATABASE } from "../data/animeData";
@@ -27,125 +27,104 @@ const STORAGE_KEYS = {
 // Fallback curated release notifications (offline resilient & instant rendering)
 const CURATED_RELEASES = [
   {
-    id: "curated_ep_one_piece_1150",
+    id: "curated_ep_last_of_us_s1e1",
     category: "episode",
     categoryLabel: "New Episode",
-    title: "One Piece",
-    subtitle: "Egghead Arc · Episode 1150",
-    message: "Episode 1150 is now available! Luffy unleashes Gear 5 in the battle of Future Island.",
+    title: "The Last of Us",
+    subtitle: "Season 1 · Episode 1 \"When You're Lost in the Darkness\"",
+    message: "Joel and Ellie embark on their journey across a post-apocalyptic United States.",
     mediaType: "tv",
-    mediaId: "37854",
-    season: 1,
-    episode: 1150,
-    posterPath: "https://image.tmdb.org/t/p/w342/cMD9Ygz11yj5G3yEvHQbWv6PL3J.jpg",
-    timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    timeDisplay: "2 hours ago",
-    watchUrl: "/watch/tv/37854?season=1&episode=1150",
-    badgeText: "EP 1150",
-    badgeType: "episode",
-  },
-  {
-    id: "curated_ep_solo_leveling_s1e1",
-    category: "episode",
-    categoryLabel: "New Episode",
-    title: "Solo Leveling",
-    subtitle: "Season 1 · Episode 1 \"I'm Used to It\"",
-    message: "Sung Jinwoo's double dungeon journey begins. 1080p HD SoftSub & DUB available.",
-    mediaType: "tv",
-    mediaId: "82452",
+    mediaId: "100088",
     season: 1,
     episode: 1,
-    posterPath: "https://image.tmdb.org/t/p/w342/geCRueV3ElhRTr0xtJuClJ7xtOD.jpg",
-    timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
-    timeDisplay: "5 hours ago",
-    watchUrl: "/watch/tv/82452?season=1&episode=1",
+    posterPath: "https://image.tmdb.org/t/p/w342/uKvVjHNqB5VmOrdxqAt2V7JMrRI.jpg",
+    timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    timeDisplay: "2 hours ago",
+    watchUrl: "/watch/tv/100088?season=1&episode=1",
     badgeText: "S1 E1",
     badgeType: "episode",
   },
   {
-    id: "curated_rel_dandadan_s1",
+    id: "curated_ep_house_of_dragon_s2e1",
+    category: "episode",
+    categoryLabel: "New Episode",
+    title: "House of the Dragon",
+    subtitle: "Season 2 · Episode 1 \"A Son for a Son\"",
+    message: "Targaryen civil war intensifies. High definition streaming now active across all open mirrors.",
+    mediaType: "tv",
+    mediaId: "94997",
+    season: 2,
+    episode: 1,
+    posterPath: "https://image.tmdb.org/t/p/w342/7QMsOTMUswlwxJP0rTTZfmz2tX2.jpg",
+    timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    timeDisplay: "5 hours ago",
+    watchUrl: "/watch/tv/94997?season=2&episode=1",
+    badgeText: "S2 E1",
+    badgeType: "episode",
+  },
+  {
+    id: "curated_rel_dune_part_two",
     category: "release",
     categoryLabel: "New Release",
-    title: "DAN DA DAN",
-    subtitle: "Anime Series · Complete Season 1",
-    message: "New supernatural action anime added to Anikai catalog with multi-server streams.",
-    mediaType: "tv",
-    mediaId: "240411",
-    posterPath: "https://image.tmdb.org/t/p/w342/b9bA6G9e9QY64JzZ6Wp8j6HwX2B.jpg",
+    title: "Dune: Part Two",
+    subtitle: "Epic Sci-Fi · 4K Ultra HD",
+    message: "Paul Atreides unites with Chani and the Fremen while seeking revenge against the conspirators.",
+    mediaType: "movie",
+    mediaId: "693134",
+    posterPath: "https://image.tmdb.org/t/p/w342/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
     timestamp: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
     timeDisplay: "14 hours ago",
-    watchUrl: "/watch/tv/240411",
-    badgeText: "NEW SERIES",
+    watchUrl: "/watch/movie/693134",
+    badgeText: "4K UHD",
     badgeType: "release",
   },
   {
-    id: "curated_rel_demon_slayer_hashira",
+    id: "curated_rel_deadpool_wolverine",
     category: "release",
     categoryLabel: "New Release",
-    title: "Demon Slayer: Hashira Training Arc",
-    subtitle: "Movie / TV Special · 4K Ultra HD",
-    message: "Tanjiro and the Hashira prepare for the ultimate battle against Muzan Kibutsuji.",
-    mediaType: "tv",
-    mediaId: "85937",
-    posterPath: "https://image.tmdb.org/t/p/w342/xUfRZu2mi8jH6SzQEJGP6tjBuYj.jpg",
+    title: "Deadpool & Wolverine",
+    subtitle: "Action / Comedy · 1080p Full HD",
+    message: "A listless Wade Wilson toils in civilian life until a threat emerges, pairing him with Wolverine.",
+    mediaType: "movie",
+    mediaId: "533535",
+    posterPath: "https://image.tmdb.org/t/p/w342/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg",
     timestamp: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
     timeDisplay: "1 day ago",
-    watchUrl: "/watch/tv/85937",
-    badgeText: "4K HD",
+    watchUrl: "/watch/movie/533535",
+    badgeText: "FULL HD",
     badgeType: "release",
   },
   {
-    id: "curated_upc_solo_leveling_s1e3",
+    id: "curated_upc_gladiator_2",
     category: "upcoming",
     categoryLabel: "Upcoming Release",
-    title: "Solo Leveling",
-    subtitle: "Season 1 · Episode 3 \"It's Like a Game\"",
-    message: "Jinwoo awakens with the mysterious Hunter system log. Airing today with live countdown!",
-    mediaType: "tv",
-    mediaId: "82452",
-    season: 1,
-    episode: 3,
-    posterPath: "https://image.tmdb.org/t/p/w342/geCRueV3ElhRTr0xtJuClJ7xtOD.jpg",
-    releaseAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    timeDisplay: "Releasing in 1 hour",
-    watchUrl: "/watch/tv/82452?season=1&episode=3",
-    badgeText: "IN 1 HOUR",
-    badgeType: "upcoming",
-    isUpcoming: true,
-  },
-  {
-    id: "curated_upc_chainsaw_man_reze",
-    category: "upcoming",
-    categoryLabel: "Upcoming Release",
-    title: "Chainsaw Man – The Movie: Reze Arc",
-    subtitle: "Theatrical Anime Film Premiere",
-    message: "New anime movie coming to streaming soon. Add it to your watchlist for launch alert.",
+    title: "Gladiator II",
+    subtitle: "Action / Drama Premiere",
+    message: "Lucius must enter the Colosseum after his home is conquered by tyrannical emperors.",
     mediaType: "movie",
-    mediaId: "1214484",
-    posterPath: "https://image.tmdb.org/t/p/w342/npdB6eFz4qt9CdISEgLO3LwIER5.jpg",
+    mediaId: "558449",
+    posterPath: "https://image.tmdb.org/t/p/w342/2cxhvwyEwRlysAmRH4iodkvo0z5.jpg",
     releaseAt: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(),
     timeDisplay: "Coming in 2 days",
-    watchUrl: "/watch/movie/1214484",
+    watchUrl: "/watch/movie/558449",
     badgeText: "COMING SOON",
     badgeType: "upcoming",
     isUpcoming: true,
   },
   {
-    id: "curated_upc_bleach_tybw_p3",
+    id: "curated_upc_stranger_things_s5",
     category: "upcoming",
     categoryLabel: "Upcoming Release",
-    title: "Bleach: Thousand-Year Blood War",
-    subtitle: "Part 3: The Conflict · Episode 30",
-    message: "Squad Zero confronts the Schutzstaffel in the Soul King Palace. New episode tomorrow.",
+    title: "Stranger Things",
+    subtitle: "Season 5 · Final Season Premiere",
+    message: "The final battle for Hawkins approaches. Add to your watchlist for launch alert.",
     mediaType: "tv",
-    mediaId: "209867",
-    season: 3,
-    episode: 4,
-    posterPath: "https://image.tmdb.org/t/p/w342/2EewFaZrNOeCnZbYtaNLRYalJ9P.jpg",
-    releaseAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    timeDisplay: "Tomorrow at 8:00 PM",
-    watchUrl: "/watch/tv/209867",
-    badgeText: "TOMORROW",
+    mediaId: "66732",
+    posterPath: "https://image.tmdb.org/t/p/w342/49WJfeN0moxb9IPfGn8AIqMGskD.jpg",
+    releaseAt: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
+    timeDisplay: "Coming in 5 days",
+    watchUrl: "/watch/tv/66732",
+    badgeText: "FINAL SEASON",
     badgeType: "upcoming",
     isUpcoming: true,
   },
@@ -241,7 +220,7 @@ let lastFetchTime = 0;
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes cache
 
 /**
- * Fetches and dynamically aggregates movie and anime release notifications.
+ * Fetches and dynamically aggregates movie and TV release notifications.
  */
 export async function getReleaseNotifications(forceRefresh = false) {
   if (!forceRefresh && notificationCache && Date.now() - lastFetchTime < CACHE_TTL_MS) {
@@ -328,11 +307,11 @@ export async function getReleaseNotifications(forceRefresh = false) {
     console.warn("Failed reading custom media database for notifications:", err);
   }
 
-  // 2. Fetch TMDB Airing Today & Discover Anime for live New Episodes
+  // 2. Fetch TMDB Airing Today & Popular TV for live New Episodes
   try {
-    const [airingToday, discoverAnime] = await Promise.allSettled([
+    const [airingToday, popularTV] = await Promise.allSettled([
       getAiringTodayTV(),
-      getDiscoverAnime(),
+      getPopularTV(),
     ]);
 
     if (airingToday.status === "fulfilled" && airingToday.value?.results) {
@@ -344,7 +323,7 @@ export async function getReleaseNotifications(forceRefresh = false) {
           categoryLabel: "New Episode",
           title: item.name || item.original_name,
           subtitle: "New Episode Broadcast",
-          message: `A new episode has aired today. Watch the latest release now on Anikai!`,
+          message: `A new episode has aired today. Watch the latest release now!`,
           mediaType: "tv",
           mediaId: String(item.id),
           posterPath: tmdbImage(item.poster_path, "w342") || fallbackPoster(item.name),
@@ -357,15 +336,15 @@ export async function getReleaseNotifications(forceRefresh = false) {
       });
     }
 
-    if (discoverAnime.status === "fulfilled" && discoverAnime.value?.results) {
-      discoverAnime.value.results.slice(0, 3).forEach((item) => {
-        const notifId = `tmdb_anime_hot_${item.id}`;
+    if (popularTV.status === "fulfilled" && popularTV.value?.results) {
+      popularTV.value.results.slice(0, 3).forEach((item) => {
+        const notifId = `tmdb_tv_hot_${item.id}`;
         pushNotif({
           id: notifId,
           category: "release",
-          categoryLabel: "Trending Anime",
+          categoryLabel: "Trending Series",
           title: item.name || item.original_name,
-          subtitle: "Trending Anime Series",
+          subtitle: "Trending TV Series",
           message: `${item.name} is currently trending with high community ratings.`,
           mediaType: "tv",
           mediaId: String(item.id),
@@ -373,13 +352,13 @@ export async function getReleaseNotifications(forceRefresh = false) {
           timestamp: new Date(Date.now() - 3600 * 4000).toISOString(),
           timeDisplay: "Recently added",
           watchUrl: `/watch/tv/${item.id}`,
-          badgeText: "HOT ANIME",
+          badgeText: "HOT SERIES",
           badgeType: "release",
         });
       });
     }
   } catch (err) {
-    console.warn("TMDB Airing/Anime fetch error:", err);
+    console.warn("TMDB Airing/TV fetch error:", err);
   }
 
   // 3. Fetch Now Playing Movies for New Releases
@@ -451,7 +430,7 @@ export async function getReleaseNotifications(forceRefresh = false) {
 
     progressList.forEach((item) => {
       const notifId = `user_history_${item.key}`;
-      if (item.type === "tv" || item.type === "anime") {
+      if (item.type === "tv") {
         pushNotif({
           id: notifId,
           category: "episode",
@@ -489,5 +468,5 @@ export async function getReleaseNotifications(forceRefresh = false) {
 }
 
 function fallbackPoster(title) {
-  return `https://placehold.co/342x513/141722/a991ff?text=${encodeURIComponent(title || "Anime")}`;
+  return `https://placehold.co/342x513/141722/a991ff?text=${encodeURIComponent(title || "Media")}`;
 }

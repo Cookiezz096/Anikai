@@ -82,6 +82,8 @@ import { useNotifications } from "./utils/useNotifications";
 import LegalWatchProviders from "./components/LegalWatchProviders";
 import MediaWatchlistTracker from "./components/MediaWatchlistTracker";
 import WatchlistDashboard from "./components/WatchlistDashboard";
+import { adBlockFilter } from "./utils/adBlockFilter";
+import WatchmodeSources from "./components/WatchmodeSources";
 
 const fallback = "https://placehold.co/600x900/101217/ffffff?text=No+Poster";
 
@@ -410,7 +412,7 @@ function Layout({ children }) {
       <footer>
         <div>
           <b>Anikai</b>
-          <span> Stream anime, movies &amp; series in HD with multi-server support.</span>
+          <span> Stream movies &amp; series in HD with multi-server support.</span>
         </div>
         <small>Metadata powered by TMDB.</small>
       </footer>
@@ -437,83 +439,14 @@ function Notice({ text }) {
   );
 }
 
-const FEATURED_ANIME_ITEMS = [
-  {
-    id: 127532,
-    tmdb_id: 127532,
-    anilist_id: 151807,
-    media_type: "tv",
-    title: "Solo Leveling",
-    poster_path: "/geCRueV3ElhRTr0xtJuEWJt6dJ1.jpg",
-    first_air_date: "2024",
-    vote_average: 8.9,
-    badge: "SUB / DUB",
-  },
-  {
-    id: 95479,
-    tmdb_id: 95479,
-    anilist_id: 113415,
-    media_type: "tv",
-    title: "Jujutsu Kaisen",
-    poster_path: "/6qQzMJG27XOJsyAEEIisoJB45j2.jpg",
-    first_air_date: "2020",
-    vote_average: 9.3,
-    badge: "SUB / DUB",
-  },
-  {
-    id: 916224,
-    tmdb_id: 916224,
-    anilist_id: 142770,
-    media_type: "movie",
-    title: "Suzume",
-    poster_path: "/yStW1TXF5s7Tbtu9KjIZEaWl6HL.jpg",
-    release_date: "2022",
-    vote_average: 8.5,
-    badge: "SUB / DUB",
-  },
-  {
-    id: 114410,
-    tmdb_id: 114410,
-    anilist_id: 127230,
-    media_type: "tv",
-    title: "Chainsaw Man",
-    poster_path: "/npdB6eFzizki0WaZ1OvKcJrWe97.jpg",
-    first_air_date: "2022",
-    vote_average: 8.6,
-    badge: "SUB / DUB",
-  },
-  {
-    id: 85937,
-    tmdb_id: 85937,
-    anilist_id: 101922,
-    media_type: "tv",
-    title: "Demon Slayer: Kimetsu no Yaiba",
-    poster_path: "/xUfRZu2mi8jH6SzQEJGP6tjBuYj.jpg",
-    first_air_date: "2019",
-    vote_average: 8.7,
-    badge: "SUB / DUB",
-  },
-  {
-    id: 1429,
-    tmdb_id: 1429,
-    anilist_id: 16498,
-    media_type: "tv",
-    title: "Attack on Titan",
-    poster_path: "/hTP1DtLGFamjfu8WqjnuQdP1n4i.jpg",
-    first_air_date: "2013",
-    vote_average: 9.1,
-    badge: "SUB / DUB",
-  },
-];
-
 /* ─── Media card ─────────────────────────────────────────────────────────── */
 function MediaCard({ item, customBadge = null }) {
-  const type = item.media_type === "anime" ? "tv" : (item.media_type || (item.first_air_date ? "tv" : "movie"));
-  const mediaId = item.tmdb_id || item.id || item.anilist_id;
-  const title = item.title || item.name || item.title?.english || item.title?.romaji;
+  const type = item.media_type === "tv" || item.first_air_date ? "tv" : "movie";
+  const mediaId = item.tmdb_id || item.id;
+  const title = item.title || item.name;
   const custom = CUSTOM_MEDIA_DATABASE[String(mediaId)] || CUSTOM_MEDIA_DATABASE[String(item.id)];
   const badgeLabel =
-    customBadge || item.badge || (custom ? "SUB/DUB" : "HD");
+    customBadge || item.badge || (custom ? "1080p HD" : "HD");
 
   const rawPoster = item.poster_path || item.coverImage?.large || item.coverImage?.extraLarge || item.coverImage;
   const posterSrc = rawPoster
@@ -599,7 +532,7 @@ function Home() {
   const [data, setData] = useState({ trending: [], movies: [], tv: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  useEffect(() => { document.title = "Anikai - Watch Anime & Movies"; }, []);
+  useEffect(() => { document.title = "Anikai - Watch Movies & TV Shows"; }, []);
   useEffect(() => {
     Promise.all([getTrending(), getPopularMovies(), getPopularTV()])
       .then(([t, m, tv]) =>
@@ -620,11 +553,6 @@ function Home() {
       <div className="container">
         {error && <Notice text={error} />}
         <Section title="Trending This Week" items={data.trending} />
-        <Section
-          title="Featured Anime & Release Schedule (SUB / DUB)"
-          items={FEATURED_ANIME_ITEMS}
-          type="tv"
-        />
         <Section title="Popular Movies" items={data.movies} />
         <Section title="Popular TV Shows" items={data.tv} type="tv" />
       </div>
@@ -713,13 +641,20 @@ function SearchPage() {
 /* ─── Embed player ───────────────────────────────────────────────────────── */
 function EmbedPlayer({ url, reloadKey, isTrailer = false }) {
   const [isIframeLoading, setIsIframeLoading] = useState(true);
+  const wrapperRef = useRef(null);
 
   useEffect(() => {
     setIsIframeLoading(true);
   }, [url, reloadKey]);
 
+  // Attach ad-domain DOM guardian to this player wrapper
+  useEffect(() => {
+    const stopGuard = adBlockFilter.guardContainer(wrapperRef.current);
+    return () => stopGuard();
+  }, []);
+
   return (
-    <div className="player-wrapper">
+    <div className="player-wrapper" ref={wrapperRef}>
       {isIframeLoading && (
         <div className="player-loading-spinner">
           <LoaderCircle size={38} className="spin" />
@@ -764,7 +699,7 @@ function WatchPage() {
   const preferredAudio = getPreferredAudio();
   const [activeCategoryKey, setActiveCategoryKey] = useState(preferredAudio);
   const [serverIdx, setServerIdx] = useState(0);
-  const [activeServerId, setActiveServerId] = useState("vidplay");
+  const [activeServerId, setActiveServerId] = useState("videasy");
   const [activeSubtitleId, setActiveSubtitleId] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -798,7 +733,7 @@ function WatchPage() {
   const contentTypeForHook =
     releaseDataForHook?.contentType ||
     CUSTOM_MEDIA_DATABASE[String(id)]?.contentType ||
-    (type === "tv" ? "anime" : "movie");
+    (type === "tv" ? "tv" : "movie");
   const { isChecking, getSourceStatus } = useServerHealth(contentTypeForHook, releaseDataForHook ? {
     releaseData: releaseDataForHook,
     type,
@@ -1015,7 +950,7 @@ function WatchPage() {
     if (pageTitle) {
       document.title = `${pageTitle} - Anikai`;
     }
-    return () => { document.title = "Anikai - Watch Anime & Movies"; };
+    return () => { document.title = "Anikai - Watch Movies & TV Shows"; };
   }, [pageTitle]);
 
   if (error)
@@ -1029,7 +964,7 @@ function WatchPage() {
   const imdbId = media.external_ids?.imdb_id || media.imdb_id || (isImdb ? id : null);
   const trailerUrl = media.videos ? getOfficialTrailerUrl(media.videos) : null;
 
-  // Resolve structured SUB, S-SUB, DUB sources and release schedule
+  // Resolve structured streaming sources and release schedule
   let releaseData = null;
   try {
     releaseData = getMediaReleaseData({
@@ -1047,12 +982,11 @@ function WatchPage() {
   const ssubConfig = releaseData?.ssub;
   const dubConfig = releaseData?.dub;
 
-  // Determine content type (anime vs movie) for server capability filtering.
-  // Custom entries are tagged; for generic TMDB content, 'tv' = anime pool, 'movie' = movie pool.
+  // Determine content type (movie vs tv) for server capability filtering.
   const contentType =
     releaseData?.contentType ||
     CUSTOM_MEDIA_DATABASE[String(id)]?.contentType ||
-    (type === "tv" ? "anime" : "movie");
+    (type === "tv" ? "tv" : "movie");
 
   // Active category config — resolve safely with fallback to any available category
   let resolvedCategoryKey = activeCategoryKey;
@@ -1199,8 +1133,10 @@ function WatchPage() {
     }
 
     const baseFailed = (failedServerId || activeServerId || "").replace(/-sub$|-dub$|-ssub$/, "").toLowerCase();
-    const serverOrder = ["vidplay", "byfms", "dghg"];
-    const currIdx = Math.max(0, serverOrder.indexOf(baseFailed));
+    const serverOrder = ["videasy", "vidlink", "multiembed", "vidsrc"];
+    const aliasMap = { "vidplay": "vidlink", "vidsrc-cc": "multiembed", "byfms": "vidsrc", "dghg": "videasy" };
+    const normalizedFailed = aliasMap[baseFailed] || baseFailed;
+    const currIdx = Math.max(0, serverOrder.indexOf(normalizedFailed));
     const nextIdx = (currIdx + 1) % serverOrder.length;
     const nextServerId = serverOrder[nextIdx];
 
@@ -1218,14 +1154,14 @@ function WatchPage() {
     const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
     setActiveCategoryKey(safeKey);
     setServerIdx(index);
-    const srvKey = (srv?.serverId || srv?.provider || (index === 1 ? "byfms" : (index === 2 ? "dghg" : "vidplay"))).toLowerCase();
+    const srvKey = (srv?.serverId || srv?.provider || (index === 1 ? "vidlink" : (index === 2 ? "multiembed" : (index === 3 ? "vidsrc" : "videasy")))).toLowerCase();
     setActiveServerId(srvKey);
     setPreferredServer(srvKey);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
     setFailoverAttempt(0);
     failoverInProgress.current = false;
-    // Immediately reload video iframe src with chosen server and audio track without full page reload
+    // Immediately reload video iframe src with chosen server without full page reload
     setReloadKey((prev) => prev + 1);
   }
 
@@ -1238,7 +1174,6 @@ function WatchPage() {
     setFailoverAttempt(0);
     failoverInProgress.current = false;
     setPreferredAudio(safeKey);
-    // Immediately reload video iframe src with newly selected audio track without full page reload
     setReloadKey((prev) => prev + 1);
   }
 
@@ -1252,43 +1187,6 @@ function WatchPage() {
         {/* ── Compact Player Controls Header ── */}
         <div className="player-top-bar">
           <div className="player-meta-left">
-            {/* ── Dedicated SUB / DUB Audio Toggle Buttons ── */}
-            <div className="player-audio-toggle-group" style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
-              {subConfig && getCategoryStatus(subConfig) === STATUS_TYPES.AVAILABLE && (
-                <button
-                  type="button"
-                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "sub" ? "active" : ""}`}
-                  onClick={() => handleSelectCategory("sub")}
-                  title="Switch to Japanese Audio with English Subtitles (SUB)"
-                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-                >
-                  SUB
-                </button>
-              )}
-              {dubConfig && getCategoryStatus(dubConfig) === STATUS_TYPES.AVAILABLE && (
-                <button
-                  type="button"
-                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "dub" ? "active" : ""}`}
-                  onClick={() => handleSelectCategory("dub")}
-                  title="Switch to English Dubbed Audio (DUB)"
-                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-                >
-                  DUB
-                </button>
-              )}
-              {ssubConfig && getCategoryStatus(ssubConfig) === STATUS_TYPES.AVAILABLE && (
-                <button
-                  type="button"
-                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "ssub" ? "active" : ""}`}
-                  onClick={() => handleSelectCategory("ssub")}
-                  title="Switch to Soft-Subtitles (S-SUB)"
-                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-                >
-                  S-SUB
-                </button>
-              )}
-            </div>
-
             <ReleaseStatusBadge
               status={activeCategoryStatus}
               targetDate={activeCatConfig?.releaseAt}
@@ -1314,7 +1212,7 @@ function WatchPage() {
                 ? "Official Trailer"
                 : isCurrentCategoryAvailable
                 ? (currentServer?.name || `Server ${serverIdx + 1}`)
-                : `${resolvedCategoryKey.toUpperCase()} Release Scheduled`}
+                : "Active Mirror"}
             </span>
           </div>
 
@@ -1514,22 +1412,26 @@ function WatchPage() {
                 ...media,
                 tmdb_id: media.id,
                 media_type: type,
-                isAnime: contentType === "anime",
               }}
-              mediaType={contentType === "anime" ? "anime" : type}
+              mediaType={type}
               totalEpisodes={media.number_of_episodes || media.episodes || null}
             />
           </div>
         </div>
 
-        {/* ── Legal Streaming Options (TMDB JustWatch) — movies & TV only ── */}
-        {(type === "movie" || (type === "tv" && contentType !== "anime")) && (
-          <LegalWatchProviders
-            mediaType={type}
-            mediaId={media.id}
-            mediaTitle={title}
-          />
-        )}
+        {/* ── Watchmode Automated Streaming Links ── */}
+        <WatchmodeSources
+          tmdbId={String(media.id)}
+          mediaType={type}
+          title={title}
+        />
+
+        {/* ── Legal Streaming Options (TMDB JustWatch) ── */}
+        <LegalWatchProviders
+          mediaType={type}
+          mediaId={media.id}
+          mediaTitle={title}
+        />
 
         {/* ── TV Episodes List with Real-Time Availability ── */}
         {type === "tv" && (
@@ -1878,7 +1780,7 @@ function Profile() {
             {allProgress.length > 0 ? (
               <div className="continue-grid">
                 {allProgress.map(prog => {
-                  const isTV = prog.type === 'tv' || prog.type === 'anime';
+                  const isTV = prog.type === 'tv';
                   const posterImg = prog.posterPath 
                     ? (prog.posterPath.startsWith("http") ? prog.posterPath : `https://image.tmdb.org/t/p/w500${prog.posterPath}`) 
                     : "https://placehold.co/600x900/101217/ffffff?text=No+Poster";
@@ -1917,12 +1819,12 @@ function Profile() {
           </div>
         )}
 
-        {/* ── Watchlist Dashboard (Polymorphic — movies, TV, anime) ── */}
+        {/* ── Watchlist Dashboard (movies & TV series) ── */}
         {activeTab === "watchlist" && (
           <WatchlistDashboard
             onSelectMedia={(item) => {
-              const routeType = item.media_type === "anime" ? "tv" : (item.media_type || "movie");
-              const mediaId = item.tmdb_id || item.anilist_id || item.media_id;
+              const routeType = item.media_type === "tv" ? "tv" : "movie";
+              const mediaId = item.tmdb_id || item.media_id || item.id;
               navigate(`/watch/${routeType}/${mediaId}`);
             }}
           />
@@ -2013,7 +1915,7 @@ function Notifications() {
         <div className="notif-heading-text">
           <h1>Release Notifications</h1>
           <p>
-            Discover newly released anime episodes, movie premieres, and upcoming broadcast countdowns.
+            Discover newly released episodes, movie premieres, and upcoming broadcast countdowns.
           </p>
         </div>
       </div>

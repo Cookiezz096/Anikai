@@ -36,7 +36,6 @@ export default function MediaWatchlistTracker({
   const [isFavorite, setIsFavorite] = useState(false);
 
   const mediaId = media?.id;
-  const isAnime = mediaType === "anime" || media?.isAnime;
   const maxEpisodes = totalEpisodes || media?.number_of_episodes || media?.episodes || 0;
 
   // Load current watchlist state for this media item
@@ -196,8 +195,8 @@ export default function MediaWatchlistTracker({
       {/* Expanded Progress & Rating Controls (Visible if item is tracked) */}
       {currentEntry && (
         <div className="tracker-extended-controls">
-          {/* Episode Progress for TV & Anime */}
-          {(mediaType === "tv" || isAnime || maxEpisodes > 0) && (
+          {/* Episode Progress for TV Series */}
+          {(mediaType === "tv" || maxEpisodes > 0) && (
             <div className="tracker-progress-row">
               <span className="tracker-control-label">Progress:</span>
               <div className="progress-counter-group">

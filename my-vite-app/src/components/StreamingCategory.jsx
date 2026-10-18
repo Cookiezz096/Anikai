@@ -65,9 +65,10 @@ export default function StreamingCategory({
               : activeServerIndex === index);
 
           let displayName = srv.name || "Server";
-          if (srvBaseId === "vidplay") displayName = "Vidplay";
-          else if (srvBaseId === "byfms") displayName = "BYFMS";
-          else if (srvBaseId === "dghg") displayName = "DGHG";
+          if (srvBaseId === "videasy" || srvBaseId === "dghg") displayName = "Videasy Cloud";
+          else if (srvBaseId === "vidlink" || srvBaseId === "vidplay") displayName = "VidLink Pro";
+          else if (srvBaseId === "multiembed" || srvBaseId === "vidsrc-cc") displayName = "MultiEmbed VIP";
+          else if (srvBaseId === "vidsrc" || srvBaseId === "byfms") displayName = "VidSrc Active";
 
           return (
             <button

@@ -3,13 +3,13 @@
  * Streaming server registry with capability, health, and ad-quality metadata.
  *
  * Each server declares:
- *   - contentTypes: ['anime', 'movie', 'both']  — what content it can stream
- *   - supports.sub: boolean  — can serve SUB (subtitled) content
- *   - supports.dub: boolean  — can serve DUB (English/international dubbed) content
+ *   - contentTypes: ['tv', 'movie', 'both']  — what content it can stream
+ *   - supports.sub: boolean  — can serve standard/subtitled content
+ *   - supports.dub: boolean  — can serve multi-audio content
  *   - health: SERVER_HEALTH.*  — provider availability status
  *   - adQuality: AD_QUALITY.*  — popup/ad intrusion level (separate from health)
  *   - movie(id, imdb): function returning embed URL for movies
- *   - tv(id, s, e, imdb): function returning embed URL for TV/anime episodes
+ *   - tv(id, s, e, imdb): function returning embed URL for TV episodes
  */
 
 // ─── Provider Health (availability) ────────────────────────────────────────
@@ -58,7 +58,7 @@ export const AD_QUALITY_CLASS = {
 };
 
 export const CONTENT_TYPES = {
-  ANIME: "anime",
+  TV:    "tv",
   MOVIE: "movie",
   BOTH:  "both",
 };
@@ -66,41 +66,35 @@ export const CONTENT_TYPES = {
 // ─── Provider Registry ────────────────────────────────────────────────────
 export const SERVERS = [
   {
-    id: "vidplay",
-    name: "Vidplay",
+    id: "videasy",
+    name: "Videasy Cloud",
     quality: "1080p Ultra HD",
     badge: "1080p Ultra",
     badgeClass: "badge-fhd",
-    tag: "Fast · High Stability",
+    tag: "Primary Direct VIP · Ultra Fast",
     recommended: true,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
     health: SERVER_HEALTH.WORKING,
-    adQuality: AD_QUALITY.LOW_ADS,
+    adQuality: AD_QUALITY.CLEAN,
     movie: (id, imdb) => {
       const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
-      const imdbId = (typeof id === "string" && id.startsWith("tt")) ? id : imdb;
-      if (imdbId) {
-        return `https://vidsrc.to/embed/movie?imdb=${encodeURIComponent(imdbId)}`;
-      }
-      return `https://vidsrc.to/embed/movie/${id}`;
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://player.videasy.net/movie/${targetId}`;
     },
     tv: (id, s, e, imdb) => {
       const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
-      const imdbId = (typeof id === "string" && id.startsWith("tt")) ? id : imdb;
-      if (imdbId) {
-        return `https://vidsrc.to/embed/tv?imdb=${encodeURIComponent(imdbId)}&season=${s}&episode=${e}`;
-      }
-      return `https://vidsrc.to/embed/tv/${id}/${s}/${e}`;
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://player.videasy.net/tv/${targetId}/${s}/${e}`;
     },
   },
   {
-    id: "byfms",
-    name: "BYFMS",
+    id: "vidlink",
+    name: "VidLink Pro",
     quality: "1080p Full HD",
     badge: "1080p HD",
     badgeClass: "badge-fhd",
-    tag: "Reliable Mirror · Fast HLS",
+    tag: "High-Speed Stream · Multi-Audio",
     recommended: false,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
@@ -109,17 +103,156 @@ export const SERVERS = [
     movie: (id, imdb) => {
       const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
       const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
-      return `https://player.autoembed.cc/embed/movie/${targetId}`;
+      return `https://vidlink.pro/movie/${targetId}`;
     },
     tv: (id, s, e, imdb) => {
       const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
       const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
-      return `https://player.autoembed.cc/embed/tv/${targetId}/${s}/${e}`;
+      return `https://vidlink.pro/tv/${targetId}/${s}/${e}`;
+    },
+  },
+  {
+    id: "multiembed",
+    name: "MultiEmbed VIP",
+    quality: "1080p Full HD",
+    badge: "Auto Mirror",
+    badgeClass: "badge-fhd",
+    tag: "Multi-Mirror Cluster · High Uptime",
+    recommended: false,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://multiembed.mov/?video_id=${targetId}&tmdb=1`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://multiembed.mov/?video_id=${targetId}&tmdb=1&s=${s}&e=${e}`;
+    },
+  },
+  {
+    id: "vidsrcto",
+    name: "VidSrc TO (Fast Stream)",
+    quality: "1080p Ultra HD",
+    badge: "Fast Stream",
+    badgeClass: "badge-fhd",
+    tag: "High-Speed Open Embed · Low Latency",
+    recommended: true,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.CLEAN,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidsrc.to/embed/movie/${targetId}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidsrc.to/embed/tv/${targetId}/${s}/${e}`;
+    },
+  },
+  {
+    id: "vidsrc",
+    name: "VidSrc Active",
+    quality: "1080p HD",
+    badge: "Multi Stream",
+    badgeClass: "badge-fhd",
+    tag: "Active Mirror · Extensive Catalog",
+    recommended: false,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidsrc.to/embed/movie/${targetId}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidsrc.to/embed/tv/${targetId}/${s}/${e}`;
+    },
+  },
+  // Legacy aliases for backward compatibility with cached state and selectors
+  {
+    id: "vidplay",
+    name: "VidLink Pro",
+    quality: "1080p Ultra HD",
+    badge: "1080p Ultra",
+    badgeClass: "badge-fhd",
+    tag: "Primary Direct VIP · Ultra Fast",
+    recommended: true,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.CLEAN,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidlink.pro/movie/${targetId}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidlink.pro/tv/${targetId}/${s}/${e}`;
+    },
+  },
+  {
+    id: "vidsrc-cc",
+    name: "MultiEmbed VIP",
+    quality: "1080p Full HD",
+    badge: "Auto Mirror",
+    badgeClass: "badge-fhd",
+    tag: "Multi-Mirror Cluster · High Uptime",
+    recommended: false,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://multiembed.mov/?video_id=${targetId}&tmdb=1`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://multiembed.mov/?video_id=${targetId}&tmdb=1&s=${s}&e=${e}`;
+    },
+  },
+  {
+    id: "byfms",
+    name: "VidSrc Active",
+    quality: "1080p Full HD",
+    badge: "1080p HD",
+    badgeClass: "badge-fhd",
+    tag: "Active Mirror · High Catalog Coverage",
+    recommended: false,
+    contentTypes: [CONTENT_TYPES.BOTH],
+    supports: { sub: true, dub: true },
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidsrc.to/embed/movie/${targetId}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://vidsrc.to/embed/tv/${targetId}/${s}/${e}`;
     },
   },
   {
     id: "dghg",
-    name: "DGHG",
+    name: "Videasy Cloud",
     quality: "1080p HD",
     badge: "1080p HD",
     badgeClass: "badge-fhd",
@@ -225,7 +358,7 @@ export function getSourceHealthKey({
 
 /**
  * Returns a filtered list of servers based on:
- *   - contentType: 'anime' | 'movie'
+ *   - contentType: 'tv' | 'movie'
  *   - audioType: 'sub' | 'dub' | null (null = no audio filter)
  *   - allowExcessiveAds: defaults to false — hides EXCESSIVE_ADS providers from auto-selection
  *
@@ -236,7 +369,7 @@ export function getServersForContent(contentType, audioType = null, allowExcessi
     // 1. Content type match
     const typeMatch =
       srv.contentTypes.includes(CONTENT_TYPES.BOTH) ||
-      (contentType === "anime" && srv.contentTypes.includes(CONTENT_TYPES.ANIME)) ||
+      (contentType === "tv" && srv.contentTypes.includes(CONTENT_TYPES.TV)) ||
       (contentType === "movie" && srv.contentTypes.includes(CONTENT_TYPES.MOVIE));
     if (!typeMatch) return false;
 
@@ -261,37 +394,9 @@ export function getServersForContent(contentType, audioType = null, allowExcessi
  */
 export function applyAudioTrackToUrl(rawUrl, audioType = "sub") {
   if (!rawUrl) return "";
-  const typeKey = String(audioType).toLowerCase();
-  try {
-    const urlObj = new URL(rawUrl);
-    urlObj.searchParams.delete("sub");
-    urlObj.searchParams.delete("dub");
-    urlObj.searchParams.delete("audio");
-    urlObj.searchParams.delete("ssub");
-
-    if (typeKey === "dub") {
-      urlObj.searchParams.set("dub", "1");
-      urlObj.searchParams.set("audio", "dub");
-    } else if (typeKey === "ssub") {
-      urlObj.searchParams.set("sub", "1");
-      urlObj.searchParams.set("audio", "sub");
-      urlObj.searchParams.set("ssub", "1");
-    } else {
-      urlObj.searchParams.set("sub", "1");
-      urlObj.searchParams.set("audio", "sub");
-    }
-    return urlObj.toString();
-  } catch {
-    const cleanUrl = rawUrl.replace(/[?&](sub|dub|audio|ssub)=[^&]*/g, "");
-    const separator = cleanUrl.includes("?") ? "&" : "?";
-    if (typeKey === "dub") {
-      return `${cleanUrl}${separator}audio=dub&dub=1`;
-    }
-    if (typeKey === "ssub") {
-      return `${cleanUrl}${separator}audio=sub&sub=1&ssub=1`;
-    }
-    return `${cleanUrl}${separator}audio=sub&sub=1`;
-  }
+  // Open embed providers handle audio tracks and subtitles directly in player controls.
+  // We keep the embed URLs clean and uncorrupted.
+  return rawUrl;
 }
 
 /**
@@ -318,7 +423,7 @@ export function buildSourceEntry(
       name: srv.name,
       provider: srv.id,
       quality: srv.quality || "1080p Full HD",
-      badge: audioType === "dub" ? "English DUB" : (srv.badge || "1080p HD"),
+      badge: audioType === "dub" ? "Multi-Audio" : (srv.badge || "1080p HD"),
       badgeClass: srv.badgeClass || "badge-fhd",
       tag: srv.tag,
       health: getServerHealth(srv.id),
@@ -346,29 +451,29 @@ export function buildSourceEntry(
 }
 
 /**
- * Generates dynamic SUB, S-SUB, DUB categories for any standard TMDB or anime content.
- * Guarantees the canonical 3 providers: Vidplay, BYFMS, DGHG.
+ * Generates dynamic streaming categories for standard TMDB movies and TV content.
+ * Guarantees the canonical active open-embed providers: Videasy, VidLink, MultiEmbed, VidSrc.
  */
 export function generateDynamicCategories({
-  contentType,  // 'anime' | 'movie'
-  type,         // 'tv' | 'movie' (TMDB type)
+  contentType = "movie",
+  type = "movie",
   id,
   imdbId,
-  season,
-  episode,
+  season = 1,
+  episode = 1,
   subtitles = [],
 }) {
   try {
-    const providers = SERVERS.filter((s) => ["vidplay", "byfms", "dghg"].includes(s.id));
     const isImdb = typeof id === "string" && id.startsWith("tt");
     const effectiveImdbId = imdbId || (isImdb ? id : null);
 
+    const activeProviderIds = ["vidsrcto", "videasy", "vidlink", "multiembed", "vidsrc"];
+    const providers = activeProviderIds
+      .map((pid) => SERVERS.find((s) => s.id === pid))
+      .filter(Boolean);
+
     const subSources = providers.map((srv, idx) =>
       buildSourceEntry(srv, { type, id, imdbId: effectiveImdbId, season, episode, subtitles, audioType: "sub" }, idx)
-    );
-
-    const ssubSources = providers.map((srv, idx) =>
-      buildSourceEntry(srv, { type, id, imdbId: effectiveImdbId, season, episode, subtitles, audioType: "ssub" }, idx)
     );
 
     const dubSources = providers.map((srv, idx) =>
@@ -379,9 +484,7 @@ export function generateDynamicCategories({
       sub: subSources.length > 0
         ? { status: "AVAILABLE", sources: subSources }
         : null,
-      ssub: (contentType === "anime" || type === "tv") && ssubSources.length > 0
-        ? { status: "AVAILABLE", sources: ssubSources }
-        : null,
+      ssub: null,
       dub: dubSources.length > 0
         ? { status: "AVAILABLE", sources: dubSources }
         : null,

@@ -29,7 +29,7 @@ export function getAllWatchProgress() {
  * Generates key for watch progress entry.
  */
 export function getProgressKey(type, id, season = 1, episode = 1) {
-  if (type === "tv" || type === "anime") {
+  if (type === "tv") {
     return `tv_${id}_s${season}_e${episode}`;
   }
   return `movie_${id}`;

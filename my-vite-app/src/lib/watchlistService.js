@@ -25,8 +25,7 @@ function saveLocalWatchlist(list) {
  * Normalizes movie/tv/anime metadata to the polymorphic media schema
  */
 export function formatMediaForCatalog(media, mediaType = "movie") {
-  const isAnime = mediaType === "anime" || media.isAnime;
-  const resolvedType = isAnime ? "anime" : (mediaType === "tv" || media.first_air_date ? "tv" : "movie");
+  const resolvedType = mediaType === "tv" || media.first_air_date ? "tv" : "movie";
 
   return {
     media_type: resolvedType,

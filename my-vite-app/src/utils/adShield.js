@@ -2,7 +2,11 @@
  * adShield.js
  * Advanced client-side protection against intrusive popups, popunders,
  * top-level navigation hijacking, and clickjacking from third-party embed players.
+ *
+ * Integrates with adBlockFilter.js to surface domain-level network/DOM block counts
+ * through the existing subscriber API.
  */
+import { adBlockFilter } from "./adBlockFilter";
 
 class AdShield {
   constructor() {
@@ -29,6 +33,9 @@ class AdShield {
     if (savedSetting !== null) {
       this.shieldEnabled = savedSetting === "true";
     }
+
+    // Mirror adBlockFilter domain-level counters into our subscriber notifications
+    adBlockFilter.subscribe(() => this.notifyListeners());
 
     console.info("🛡️ [Anikai AdShield] Protection initialized and active.");
   }
@@ -147,7 +154,11 @@ class AdShield {
   }
 
   getBlockedCount() {
-    return this.blockedPopupsCount + this.blockedRedirectsCount;
+    return (
+      this.blockedPopupsCount +
+      this.blockedRedirectsCount +
+      adBlockFilter.totalBlocked
+    );
   }
 
   subscribe(listener) {
@@ -161,6 +172,10 @@ class AdShield {
         fn({
           enabled: this.shieldEnabled,
           blockedCount: this.getBlockedCount(),
+          blockedPopups: this.blockedPopupsCount + this.blockedRedirectsCount,
+          blockedDomains: adBlockFilter.totalBlocked,
+          blockedRequests: adBlockFilter.blockedRequests,
+          blockedDomNodes: adBlockFilter.blockedDomNodes,
         });
       } catch (_) {}
     });

@@ -75,7 +75,7 @@ export default function NotificationPanel({
               <span className="notif-caught-up-pill">Caught up</span>
             )}
           </div>
-          <p className="notif-subtitle">New anime episodes, movie releases &amp; upcoming schedules</p>
+          <p className="notif-subtitle">New TV episodes, movie releases &amp; upcoming schedules</p>
         </div>
 
         {unreadCount > 0 && (
@@ -133,7 +133,7 @@ export default function NotificationPanel({
               <Sparkles size={28} />
             </div>
             <h4>No releases in this category</h4>
-            <p>Check back soon for new anime episodes, movies, and schedule updates.</p>
+            <p>Check back soon for new TV episodes, movies, and schedule updates.</p>
           </div>
         ) : (
           filteredNotifications.map((item) => {

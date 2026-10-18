@@ -17,6 +17,7 @@ import {
 import SkipTimingsOverlay from "./SkipTimingsOverlay";
 import AutoNextOverlay from "./AutoNextOverlay";
 import { adShield } from "../utils/adShield";
+import { adBlockFilter } from "../utils/adBlockFilter";
 import {
   getWatchProgress,
   saveWatchProgress,
@@ -59,9 +60,11 @@ export default function EnhancedEmbedPlayer({
   const [savedProgress, setSavedProgress] = useState(null);
   const [adShieldActive, setAdShieldActive] = useState(adShield.isShieldActive());
   const [blockedCount, setBlockedCount] = useState(adShield.getBlockedCount());
+  const [blockedDomains, setBlockedDomains] = useState(adBlockFilter.totalBlocked);
 
-  const failTimeoutRef = useRef(null);
-  const progressIntervalRef = useRef(null);
+  const failTimeoutRef       = useRef(null);
+  const progressIntervalRef  = useRef(null);
+  const wrapperRef           = useRef(null);
   const currentUrl = isTrailer && trailerUrl ? trailerUrl : server?.url || "";
 
   // Subscribe to Ad Shield changes
@@ -71,6 +74,20 @@ export default function EnhancedEmbedPlayer({
       setBlockedCount(count);
     });
     return () => unsubscribe();
+  }, []);
+
+  // Subscribe to adBlockFilter domain-level counts
+  useEffect(() => {
+    const unsubscribe = adBlockFilter.subscribe(({ total }) => {
+      setBlockedDomains(total);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Attach DOM guardian to the player wrapper on mount
+  useEffect(() => {
+    const stopGuard = adBlockFilter.guardContainer(wrapperRef.current);
+    return () => stopGuard();
   }, []);
 
   // Check for saved watch progress on title/episode change
@@ -99,13 +116,16 @@ export default function EnhancedEmbedPlayer({
       return;
     }
 
-    // Safety timeout: if iframe doesn't respond or load within 12s, attempt graceful failover
+    // Safety timeout: if iframe doesn't respond or load within 18s, attempt graceful failover
     if (!isTrailer && onFailover) {
       failTimeoutRef.current = setTimeout(() => {
-        if (isLoading) {
-          handlePlaybackFailure("timeout");
-        }
-      }, 12000);
+        setIsLoading((stillLoading) => {
+          if (stillLoading) {
+            handlePlaybackFailure("timeout");
+          }
+          return stillLoading;
+        });
+      }, 18000);
     }
 
     return () => {
@@ -184,7 +204,7 @@ export default function EnhancedEmbedPlayer({
   }
 
   return (
-    <div className="player-wrapper enhanced-player-wrapper">
+    <div className="player-wrapper enhanced-player-wrapper" ref={wrapperRef}>
       {/* ── Resume Playback Banner ── */}
       {showResumeBanner && savedProgress && (
         <div className="resume-playback-banner">
@@ -285,6 +305,9 @@ export default function EnhancedEmbedPlayer({
                 <span>Ad Shield: Active</span>
                 {blockedCount > 0 && (
                   <span className="shield-blocked-pill">{blockedCount} Blocked</span>
+                )}
+                {blockedDomains > 0 && (
+                  <span className="shield-blocked-pill shield-blocked-domains">{blockedDomains} domains</span>
                 )}
               </>
             ) : (
