@@ -3,32 +3,28 @@
  *
  * Comprehensive Streaming Health Check & Manifest Verification Service
  * supporting Provider-Level AND Title/Episode-Specific Source Availability.
- *
- * Key Capabilities:
- *   1. Title & Episode-Specific Evaluation: A provider may be online, but a specific
- *      episode/movie may return 404, broken manifest, or missing stream token.
- *   2. CORS Safety: Browser cross-origin limitations are treated as UNVERIFIED (playable)
- *      rather than falsely marking the server offline.
- *   3. Intelligent Caching: Caches health status per (serverId, contentId, episode)
- *      with a 5-minute TTL to prevent spamming providers with excessive requests.
- *   4. Runtime Auto-Failover: Players reporting playback errors flag the specific
- *      source as UNAVAILABLE in real time.
  */
 
 import {
   SERVERS,
-  setServerHealth,
   SERVER_HEALTH,
   CONTENT_TYPES,
   getSourceHealthKey,
   isServerPlayable,
 } from "./sources.js";
 
-const CACHE_PREFIX = "srv_health_v4_";
+const CACHE_PREFIX = "srv_health_v6_";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
 
 const REMOVED_DEAD_PROVIDERS = [
   "vidlink",
+  "vidsrcto",
+  "vidsrcme",
+  "autoembed",
+  "embedsu",
+  "superembed",
+  "videasy",
+  "2embed",
   "vidsrcpro",
   "smashystream",
   "moviesapi",
@@ -78,7 +74,9 @@ function readCache(key) {
       localStorage.removeItem(CACHE_PREFIX + key);
       return null;
     }
-    return parsed.health;
+    if (parsed.data) return parsed.data;
+    if (parsed.health) return { health: parsed.health, subtitles: [], englishSubtitle: false };
+    return null;
   } catch {
     return null;
   }
@@ -87,11 +85,11 @@ function readCache(key) {
 /**
  * Writes health state to localStorage.
  */
-function writeCache(key, health) {
+function writeCache(key, dataObj) {
   try {
     localStorage.setItem(
       CACHE_PREFIX + key,
-      JSON.stringify({ health, ts: Date.now() })
+      JSON.stringify({ data: dataObj, ts: Date.now() })
     );
   } catch {
     // localStorage may be disabled or quota reached
@@ -116,33 +114,45 @@ export function getSourceHealth(sourceKey, fallbackServerId = null) {
     const provCached = readCache(baseId);
     if (provCached) return provCached;
     const serverObj = SERVERS.find((s) => s.id === baseId);
-    return serverObj?.health ?? SERVER_HEALTH.WORKING;
+    return { health: serverObj?.health ?? SERVER_HEALTH.WORKING, subtitles: [], englishSubtitle: false };
   }
-  return SERVER_HEALTH.WORKING;
+  return { health: SERVER_HEALTH.WORKING, subtitles: [], englishSubtitle: false };
 }
 
 /**
  * Sets the title/episode-specific health status.
  */
-export function setSourceHealth(sourceKey, health) {
-  sourceHealthState[sourceKey] = health;
-  writeCache(sourceKey, health);
+export function setSourceHealth(sourceKey, health, subtitles = [], englishSubtitle = false) {
+  const data = { health, subtitles, englishSubtitle };
+  sourceHealthState[sourceKey] = data;
+  writeCache(sourceKey, data);
+}
+
+export function hasEnglish(subtitles) {
+  if (!Array.isArray(subtitles)) return false;
+  return subtitles.some(s => 
+    s.languageCode?.toLowerCase() === "en" || 
+    s.language?.toLowerCase().includes("english")
+  );
 }
 
 /**
  * Probes a video stream source or manifest endpoint.
  */
-async function probeStreamSource(url, timeoutMs = 4500) {
+async function probeStreamSource(url, sourceObj, timeoutMs = 4500) {
+  const defaultSubs = sourceObj?.subtitles || [];
+  const defaultEng = hasEnglish(defaultSubs);
+
   if (!url || typeof url !== "string") {
-    return SERVER_HEALTH.OFFLINE;
+    return { health: SERVER_HEALTH.OFFLINE, subtitles: [], englishSubtitle: false };
   }
 
   // Simulated test endpoints
   if (url.includes("broken-anime") || url.includes("unavailable-")) {
-    return SERVER_HEALTH.UNAVAILABLE;
+    return { health: SERVER_HEALTH.UNAVAILABLE, subtitles: defaultSubs, englishSubtitle: defaultEng };
   }
   if (url.includes("offline-down-server")) {
-    return SERVER_HEALTH.OFFLINE;
+    return { health: SERVER_HEALTH.OFFLINE, subtitles: defaultSubs, englishSubtitle: defaultEng };
   }
 
   const controller = new AbortController();
@@ -158,15 +168,16 @@ async function probeStreamSource(url, timeoutMs = 4500) {
     clearTimeout(timer);
 
     if (response.status === 404 || response.status === 410 || response.status === 403) {
-      return SERVER_HEALTH.UNAVAILABLE; // Online provider, but source is broken/unavailable for this title
+      return { health: SERVER_HEALTH.UNAVAILABLE, subtitles: defaultSubs, englishSubtitle: defaultEng };
     }
     if (response.status >= 500) {
-      return SERVER_HEALTH.DEGRADED;
+      return { health: SERVER_HEALTH.DEGRADED, subtitles: defaultSubs, englishSubtitle: defaultEng };
     }
 
     if (response.ok) {
+      let text = "";
       try {
-        const text = await response.text();
+        text = await response.text();
         const lower = text.toLowerCase();
         if (
           lower.includes("video not found") ||
@@ -176,20 +187,29 @@ async function probeStreamSource(url, timeoutMs = 4500) {
           lower.includes('"error":') ||
           lower.includes("no stream available")
         ) {
-          return SERVER_HEALTH.UNAVAILABLE;
+          return { health: SERVER_HEALTH.UNAVAILABLE, subtitles: defaultSubs, englishSubtitle: defaultEng };
         }
       } catch {
         // Binary or stream body — valid
       }
-      return SERVER_HEALTH.WORKING;
+      
+      let discoveredEng = defaultEng;
+      if (!discoveredEng && text) {
+         const lower = text.toLowerCase();
+         if ((lower.includes('kind="captions"') || lower.includes('kind="subtitles"')) && 
+             (lower.includes('english') || lower.includes('en.vtt') || lower.includes('eng.vtt'))) {
+             discoveredEng = true;
+         }
+      }
+      return { health: SERVER_HEALTH.WORKING, subtitles: defaultSubs, englishSubtitle: discoveredEng };
     }
 
-    return SERVER_HEALTH.UNVERIFIED;
+    return { health: SERVER_HEALTH.UNVERIFIED, subtitles: defaultSubs, englishSubtitle: defaultEng };
   } catch (err) {
     clearTimeout(timer);
 
     if (err?.name === "AbortError") {
-      return SERVER_HEALTH.DEGRADED; // High latency / timeout
+      return { health: SERVER_HEALTH.DEGRADED, subtitles: defaultSubs, englishSubtitle: defaultEng };
     }
 
     // Step 2: Fallback for CORS-restricted third-party embeds
@@ -205,13 +225,13 @@ async function probeStreamSource(url, timeoutMs = 4500) {
       });
       clearTimeout(noCorsTimer);
       // Host answered HTTP request -> Valid & Playable via iframe (Unverified payload)
-      return SERVER_HEALTH.UNVERIFIED;
+      return { health: SERVER_HEALTH.UNVERIFIED, subtitles: defaultSubs, englishSubtitle: defaultEng };
     } catch (noCorsErr) {
       clearTimeout(noCorsTimer);
       if (noCorsErr?.name === "AbortError") {
-        return SERVER_HEALTH.DEGRADED;
+        return { health: SERVER_HEALTH.DEGRADED, subtitles: defaultSubs, englishSubtitle: defaultEng };
       }
-      return SERVER_HEALTH.OFFLINE;
+      return { health: SERVER_HEALTH.OFFLINE, subtitles: defaultSubs, englishSubtitle: defaultEng };
     }
   }
 }
@@ -242,34 +262,53 @@ export async function checkSingleSourceHealth({
 
   // Explicit declared health in source metadata (e.g. mock test cases or admin flags)
   if (source?.health && source.health !== SERVER_HEALTH.WORKING) {
-    setSourceHealth(sourceKey, source.health);
-    return { sourceKey, health: source.health };
+    const defaultSubs = source.subtitles || [];
+    const eng = hasEnglish(defaultSubs);
+    setSourceHealth(sourceKey, source.health, defaultSubs, eng);
+    return { sourceKey, health: source.health, subtitles: defaultSubs, englishSubtitle: eng };
   }
 
   // Check cached state
   const cached = readCache(sourceKey);
   if (cached) {
     sourceHealthState[sourceKey] = cached;
-    return { sourceKey, health: cached };
+    return { sourceKey, ...cached };
   }
 
   // Check provider base health first: if provider is already known offline, source is offline
   const baseId = effectiveServerId.replace(/-ssub$|-dub$/, "");
   const provObj = SERVERS.find((s) => s.id === baseId);
   if (provObj?.health === SERVER_HEALTH.OFFLINE) {
-    setSourceHealth(sourceKey, SERVER_HEALTH.OFFLINE);
-    return { sourceKey, health: SERVER_HEALTH.OFFLINE };
+    const defaultSubs = source?.subtitles || [];
+    const eng = hasEnglish(defaultSubs);
+    setSourceHealth(sourceKey, SERVER_HEALTH.OFFLINE, defaultSubs, eng);
+    return { sourceKey, health: SERVER_HEALTH.OFFLINE, subtitles: defaultSubs, englishSubtitle: eng };
   }
 
   // Probe the actual title/episode URL
-  const health = await probeStreamSource(effectiveUrl);
-  setSourceHealth(sourceKey, health);
-  return { sourceKey, health };
+  const res = await probeStreamSource(effectiveUrl, source);
+  setSourceHealth(sourceKey, res.health, res.subtitles, res.englishSubtitle);
+  return { sourceKey, ...res };
+}
+
+/**
+ * Global Architecture Check: checks exact episode and server.
+ */
+export async function checkServer({ animeId, season, episode, audioType, serverObj, type = "tv" }) {
+   return checkSingleSourceHealth({
+       source: serverObj,
+       serverId: serverObj.id,
+       sourceUrl: serverObj.url,
+       type,
+       id: animeId,
+       season,
+       episode,
+       categoryKey: audioType
+   });
 }
 
 /**
  * Checks health for all sources configured for a specific title/episode.
- * Only probes the sources relevant to the current WatchPage context.
  */
 export async function checkMediaSourcesHealth({
   releaseData,
@@ -300,7 +339,7 @@ export async function checkMediaSourcesHealth({
               episode,
               categoryKey: catKey,
             });
-            if (onUpdate) onUpdate(res.sourceKey, res.health);
+            if (onUpdate) onUpdate(res.sourceKey, res);
             return res;
           })()
         );
@@ -337,7 +376,7 @@ export function reportRuntimePlaybackIssue({
       ? SERVER_HEALTH.OFFLINE
       : SERVER_HEALTH.UNAVAILABLE;
 
-  setSourceHealth(sourceKey, newStatus);
+  setSourceHealth(sourceKey, newStatus, [], false);
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(

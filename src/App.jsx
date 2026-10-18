@@ -6,6 +6,7 @@ import {
   useNavigate,
   useParams,
   useSearchParams,
+  useLocation,
 } from "react-router-dom";
 import {
   Play,
@@ -31,8 +32,10 @@ import {
   Calendar,
   Layers,
   Server,
-  WifiOff,
   ShieldCheck,
+  Bell,
+  LogOut,
+  Bookmark,
 } from "lucide-react";
 import {
   getMovie,
@@ -46,15 +49,16 @@ import {
   getOfficialTrailerUrl,
 } from "./lib/tmdb";
 import { authConfigured, signInWithProvider, supabase } from "./lib/supabase";
-import { getEmbedUrl, isServerPlayable, getSourceHealthKey } from "./data/sources";
+import { getEmbedUrl, isServerPlayable, getSourceHealthKey, AD_QUALITY, isAdQualityAcceptable } from "./data/sources";
 import { reportRuntimePlaybackIssue, getSourceHealth } from "./data/serverHealthService";
 import EnhancedEmbedPlayer from "./components/EnhancedEmbedPlayer";
 import AutoNextOverlay from "./components/AutoNextOverlay";
 import SkipTimingsOverlay from "./components/SkipTimingsOverlay";
-import { rankSources, getBestSourceIndex } from "./utils/serverRanking";
+import { rankSources, getBestSourceIndex, allSourcesExcessive } from "./utils/serverRanking";
 import { useServerHealth } from "./utils/useServerHealth";
 import {
   getWatchProgress,
+  getAllWatchProgress,
   setPreferredServer,
   setPreferredAudio,
   getPreferredAudio,
@@ -73,6 +77,11 @@ import StreamingSources from "./components/StreamingSources";
 import SubtitleSelector from "./components/SubtitleSelector";
 import UpcomingOverlay from "./components/UpcomingOverlay";
 import EpisodeAvailability from "./components/EpisodeAvailability";
+import NotificationPanel from "./components/NotificationPanel";
+import { useNotifications } from "./utils/useNotifications";
+import LegalWatchProviders from "./components/LegalWatchProviders";
+import MediaWatchlistTracker from "./components/MediaWatchlistTracker";
+import WatchlistDashboard from "./components/WatchlistDashboard";
 
 const fallback = "https://placehold.co/600x900/101217/ffffff?text=No+Poster";
 
@@ -248,10 +257,40 @@ function NavSearch() {
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
 function Layout({ children }) {
   const session = useAuth();
+  const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const notifRef = useRef(null);
+
+  const {
+    notifications,
+    readIds,
+    unreadCount,
+    markAsRead,
+    markAllRead,
+  } = useNotifications();
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   async function logout() {
-    if (supabase) await supabase.auth.signOut();
+    setDropdownOpen(false);
+    if (supabase) {
+      await supabase.auth.signOut();
+      navigate("/", { replace: true });
+    }
   }
 
   return (
@@ -270,10 +309,93 @@ function Layout({ children }) {
         </nav>
         <NavSearch />
         <div className="account-actions">
-          {session ? (
-            <button className="avatar-btn" title="Sign out" onClick={logout}>
-              <User size={18} />
+          {/* Notification Bell Dropdown */}
+          <div className="notification-dropdown-container" ref={notifRef}>
+            <button
+              className={`notification-btn ${notifOpen ? "active" : ""}`}
+              onClick={() => {
+                setNotifOpen((v) => !v);
+                setDropdownOpen(false);
+              }}
+              title="Release Notifications"
+              aria-label="Release Notifications"
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span className="notification-badge">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </button>
+
+            {notifOpen && (
+              <NotificationPanel
+                notifications={notifications}
+                readIds={readIds}
+                unreadCount={unreadCount}
+                onMarkAsRead={markAsRead}
+                onMarkAllRead={markAllRead}
+                onClose={() => setNotifOpen(false)}
+                isDropdown={true}
+              />
+            )}
+          </div>
+
+          {session ? (
+            <div className="avatar-dropdown-container" ref={dropdownRef}>
+              <button 
+                className="avatar-btn" 
+                onClick={() => {
+                  setDropdownOpen(!dropdownOpen);
+                  setNotifOpen(false);
+                }}
+                onMouseEnter={() => setDropdownOpen(true)}
+                title="Account Menu"
+              >
+                {session.user?.user_metadata?.avatar_url ? (
+                  <img
+                    src={session.user.user_metadata.avatar_url}
+                    alt="Avatar"
+                    style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <User size={18} />
+                )}
+              </button>
+              
+              {dropdownOpen && (
+                <div className="avatar-dropdown-menu" onMouseLeave={() => setDropdownOpen(false)}>
+                  <div className="dropdown-header">
+                    <div className="dropdown-name">{session.user?.user_metadata?.full_name || session.user?.user_metadata?.name || "Guest"}</div>
+                    <div className="dropdown-email">{session.user?.email}</div>
+                  </div>
+                  <div className="dropdown-divider"></div>
+                  <Link to="/profile?tab=overview" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                    <User size={16} /> Profile
+                  </Link>
+                  <Link to="/profile?tab=continue" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                    <Play size={16} /> Continue Watching
+                  </Link>
+                  <Link to="/profile?tab=watchlist" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
+                    <Bookmark size={16} /> Watch List
+                  </Link>
+                  <button
+                    className="dropdown-item"
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      setNotifOpen(true);
+                    }}
+                  >
+                    <Bell size={16} /> Notifications
+                    {unreadCount > 0 && <span className="dropdown-unread-pill">{unreadCount}</span>}
+                  </button>
+                  <div className="dropdown-divider"></div>
+                  <button className="dropdown-item text-red" onClick={logout}>
+                    <LogOut size={16} /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <Link className="login-btn" to="/login">
               <LogIn size={17} /> Sign in
@@ -620,7 +742,8 @@ function EmbedPlayer({ url, reloadKey, isTrailer = false }) {
 
 /* ─── Watch page ─────────────────────────────────────────────────────────── */
 function WatchPage() {
-  const { type, id } = useParams();
+  const params = useParams();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [media, setMedia] = useState(null);
   const [error, setError] = useState("");
@@ -630,10 +753,18 @@ function WatchPage() {
   const [episode, setEpisode] = useState(() => Number(searchParams.get("episode")) || 1);
   const [seasonData, setSeasonData] = useState(null);
 
+  // Normalize route params: handle /movie/:id, /tv/:id, and /watch/:type/:id
+  const rawType = params.type || (location.pathname.startsWith("/tv") ? "tv" : "movie");
+  const type = rawType === "tv" ? "tv" : "movie";
+  const rawId = params.id;
+  const id = typeof rawId === "string" ? rawId.trim() : String(rawId || "");
+  const isImdb = id.startsWith("tt");
+
   // Streaming category & server controls
   const preferredAudio = getPreferredAudio();
   const [activeCategoryKey, setActiveCategoryKey] = useState(preferredAudio);
   const [serverIdx, setServerIdx] = useState(0);
+  const [activeServerId, setActiveServerId] = useState("vidplay");
   const [activeSubtitleId, setActiveSubtitleId] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -649,9 +780,21 @@ function WatchPage() {
 
   // IMPORTANT: useServerHealth must live here — BEFORE any early returns — to satisfy
   // React Hook rules. releaseData is passed in via computed value from `media` state.
-  const releaseDataForHook = media
-    ? getMediaReleaseData({ type, id, season, episode, imdbId: media.external_ids?.imdb_id || media.imdb_id })
-    : null;
+  let releaseDataForHook = null;
+  try {
+    if (media) {
+      releaseDataForHook = getMediaReleaseData({
+        type,
+        id,
+        season,
+        episode,
+        imdbId: media.external_ids?.imdb_id || media.imdb_id || (isImdb ? id : null),
+      });
+    }
+  } catch (hookErr) {
+    console.warn("Failed to get releaseDataForHook:", hookErr);
+  }
+
   const contentTypeForHook =
     releaseDataForHook?.contentType ||
     CUSTOM_MEDIA_DATABASE[String(id)]?.contentType ||
@@ -691,15 +834,35 @@ function WatchPage() {
   }, [type, id, season, episode]);
 
   useEffect(() => {
+    let isCancelled = false;
     setMedia(null);
     setError("");
-    (type === "tv" ? getTV(id) : getMovie(id))
-      .then(setMedia)
-      .catch((e) => {
+
+    async function loadMediaData() {
+      try {
+        let fetchedMedia = null;
+
+        // Step 1: Attempt TMDB / External fetcher
+        try {
+          fetchedMedia = await (type === "tv" ? getTV(id) : getMovie(id));
+        } catch (fetchErr) {
+          console.warn("[WatchPage] Primary TMDB fetch failed:", fetchErr);
+        }
+
+        if (isCancelled) return;
+
+        if (fetchedMedia) {
+          setMedia(fetchedMedia);
+          return;
+        }
+
+        // Step 2: Check custom local database
         const custom = CUSTOM_MEDIA_DATABASE[String(id)];
         if (custom) {
           setMedia({
             id: custom.id,
+            imdb_id: isImdb ? id : undefined,
+            external_ids: isImdb ? { imdb_id: id } : {},
             title: custom.title,
             name: custom.title,
             overview:
@@ -710,11 +873,56 @@ function WatchPage() {
               : 1,
             vote_average: 9.2,
           });
-        } else {
-          setError(e.message);
+          return;
         }
-      });
-  }, [type, id]);
+
+        // Step 3: If id starts with 'tt' (IMDb ID) and wasn't found in TMDB, create a safe fallback
+        // media object so Vidplay, BYFMS, and DGHG can still stream the content cleanly
+        if (isImdb) {
+          setMedia({
+            id,
+            imdb_id: id,
+            external_ids: { imdb_id: id },
+            title: `Title (${id})`,
+            name: `Title (${id})`,
+            overview: "Stream high-definition playback with multi-server support.",
+            vote_average: 8.0,
+            number_of_seasons: 1,
+          });
+          return;
+        }
+
+        // Step 4: Gracefully fall back to an error notice instead of crashing UI
+        setError("Unable to find media details. Please choose a different title or server.");
+      } catch (err) {
+        if (!isCancelled) {
+          console.error("[WatchPage] Critical load error:", err);
+          if (isImdb) {
+            setMedia({
+              id,
+              imdb_id: id,
+              external_ids: { imdb_id: id },
+              title: `Title (${id})`,
+              name: `Title (${id})`,
+              overview: "Stream high-definition playback with multi-server support.",
+              vote_average: 8.0,
+              number_of_seasons: 1,
+            });
+          } else {
+            setError(err?.message || "An unexpected error occurred while loading this media.");
+          }
+        }
+      }
+    }
+
+    if (id) {
+      loadMediaData();
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [type, id, isImdb]);
 
   useEffect(() => {
     setSeason(1);
@@ -722,12 +930,22 @@ function WatchPage() {
   }, [type, id]);
 
   useEffect(() => {
-    if (type === "tv") {
+    if (type === "tv" && id) {
+      let isCancelled = false;
       const custom = CUSTOM_MEDIA_DATABASE[String(id)];
       const customSeasonEps = custom?.seasons?.[season]?.episodes;
 
-      getSeason(id, season)
-        .then((res) => {
+      async function loadSeasonData() {
+        try {
+          let res = null;
+          if (!isImdb || !isNaN(Number(id))) {
+            try {
+              res = await getSeason(id, season);
+            } catch (_) {}
+          }
+
+          if (isCancelled) return;
+
           if (customSeasonEps && res?.episodes) {
             const merged = res.episodes.map((ep) => {
               const customEp = customSeasonEps.find(
@@ -752,12 +970,9 @@ function WatchPage() {
             });
             merged.sort((a, b) => a.episode_number - b.episode_number);
             setSeasonData({ episodes: merged });
-          } else {
+          } else if (res) {
             setSeasonData(res);
-          }
-        })
-        .catch(() => {
-          if (customSeasonEps) {
+          } else if (customSeasonEps) {
             setSeasonData({
               episodes: customSeasonEps.map((ce) => ({
                 id: `custom-ep-${ce.number}`,
@@ -768,11 +983,32 @@ function WatchPage() {
               })),
             });
           } else {
+            setSeasonData({
+              episodes: [
+                {
+                  id: `ep-${episode}`,
+                  episode_number: episode,
+                  name: `Episode ${episode}`,
+                  overview: "Streaming episode",
+                  vote_average: 8.0,
+                },
+              ],
+            });
+          }
+        } catch (seasonErr) {
+          console.warn("[WatchPage] Season data fetch error:", seasonErr);
+          if (!isCancelled) {
             setSeasonData(null);
           }
-        });
+        }
+      }
+
+      loadSeasonData();
+      return () => {
+        isCancelled = true;
+      };
     }
-  }, [type, id, season, media?.number_of_seasons]);
+  }, [type, id, season, isImdb, media?.number_of_seasons]);
   const pageTitle = media?.title || media?.name;
   // Update browser tab title with Anikai branding
   useEffect(() => {
@@ -790,17 +1026,22 @@ function WatchPage() {
     );
   if (!media) return <Loader />;
 
-  const imdbId = media.external_ids?.imdb_id || media.imdb_id;
-  const trailerUrl = getOfficialTrailerUrl(media.videos);
+  const imdbId = media.external_ids?.imdb_id || media.imdb_id || (isImdb ? id : null);
+  const trailerUrl = media.videos ? getOfficialTrailerUrl(media.videos) : null;
 
   // Resolve structured SUB, S-SUB, DUB sources and release schedule
-  const releaseData = getMediaReleaseData({
-    type,
-    id,
-    season,
-    episode,
-    imdbId,
-  });
+  let releaseData = null;
+  try {
+    releaseData = getMediaReleaseData({
+      type,
+      id,
+      season,
+      episode,
+      imdbId,
+    });
+  } catch (err) {
+    console.warn("[WatchPage] Error computing releaseData:", err);
+  }
 
   const subConfig = releaseData?.sub;
   const ssubConfig = releaseData?.ssub;
@@ -817,15 +1058,15 @@ function WatchPage() {
   let resolvedCategoryKey = activeCategoryKey;
   let activeCatConfig = releaseData?.[resolvedCategoryKey];
 
-  // If the preferred audio category isn't in releaseData, fall back gracefully
-  if (!activeCatConfig) {
-    if (subConfig) {
+  // If the active category isn't in releaseData or is not available, fall back gracefully
+  if (!activeCatConfig || getCategoryStatus(activeCatConfig) !== STATUS_TYPES.AVAILABLE) {
+    if (subConfig && getCategoryStatus(subConfig) === STATUS_TYPES.AVAILABLE) {
       activeCatConfig = subConfig;
       resolvedCategoryKey = "sub";
-    } else if (dubConfig) {
+    } else if (dubConfig && getCategoryStatus(dubConfig) === STATUS_TYPES.AVAILABLE) {
       activeCatConfig = dubConfig;
       resolvedCategoryKey = "dub";
-    } else if (ssubConfig) {
+    } else if (ssubConfig && getCategoryStatus(ssubConfig) === STATUS_TYPES.AVAILABLE) {
       activeCatConfig = ssubConfig;
       resolvedCategoryKey = "ssub";
     }
@@ -838,18 +1079,15 @@ function WatchPage() {
     activeCategoryStatus === STATUS_TYPES.AVAILABLE;
 
   const allCategorySources = activeCatConfig?.sources || [];
-
-  // Dynamically rank sources for this exact episode — prioritises:
-  //   ① WORKING + English Subtitles ② WORKING + Any Subtitles ③ UNVERIFIED ④ DEGRADED
-  // Servers that are UNAVAILABLE or OFFLINE are filtered out automatically.
-  const rankedSources = rankSources(
-    allCategorySources,
-    (src) => getSourceStatus(src, resolvedCategoryKey),
-    resolvedCategoryKey
-  );
-  const currentSources =
-    rankedSources.length > 0 ? rankedSources.map((r) => r.source) : allCategorySources;
-  const currentServer = currentSources[serverIdx] || currentSources[0] || null;
+  const currentServer =
+    allCategorySources.find(
+      (s) =>
+        (s.serverId || s.provider || "").toLowerCase() ===
+        activeServerId.toLowerCase()
+    ) ||
+    allCategorySources[serverIdx] ||
+    allCategorySources[0] ||
+    null;
 
   // Resolve subtitles from the episode-level health result first, then source metadata
   const currentServerStatus = currentServer
@@ -896,8 +1134,8 @@ function WatchPage() {
   const runtime = media.runtime
     ? `${Math.floor(media.runtime / 60)}h ${media.runtime % 60}m`
     : media.episode_run_time?.length
-      ? `${media.episode_run_time[0]}m/ep`
-      : null;
+    ? `${media.episode_run_time[0]}m/ep`
+    : null;
   const genres = media.genres?.map((g) => g.name).join(", ");
   const rating = media.vote_average ? media.vote_average.toFixed(1) : null;
   const cast = media.credits?.cast?.slice(0, 6) || [];
@@ -947,8 +1185,6 @@ function WatchPage() {
     if (failedServerId) {
       recordServerFailure(failedServerId);
       setTriedServerIds((prev) => new Set([...prev, failedServerId]));
-      // Mark this exact episode+server as UNAVAILABLE in the health service
-      // so it is skipped in future rankings for this session
       try {
         reportRuntimePlaybackIssue({
           serverId: failedServerId,
@@ -959,19 +1195,19 @@ function WatchPage() {
           categoryKey: resolvedCategoryKey,
           issueType: "unavailable",
         });
-      } catch (_) { }
+      } catch (_) {}
     }
 
-    // Find next untried source from ranked list
-    const nextIndex = currentSources.findIndex(
-      (src, idx) => idx > serverIdx && !triedServerIds.has(src.id)
-    );
-    if (nextIndex !== -1) {
-      setServerIdx(nextIndex);
-    } else {
-      // All sources failed
-      setServerIdx(-1); // signals error to player
-    }
+    const baseFailed = (failedServerId || activeServerId || "").replace(/-sub$|-dub$|-ssub$/, "").toLowerCase();
+    const serverOrder = ["vidplay", "byfms", "dghg"];
+    const currIdx = Math.max(0, serverOrder.indexOf(baseFailed));
+    const nextIdx = (currIdx + 1) % serverOrder.length;
+    const nextServerId = serverOrder[nextIdx];
+
+    setActiveServerId(nextServerId);
+    setServerIdx(nextIdx);
+    setReloadKey((prev) => prev + 1);
+
     setTimeout(() => {
       failoverInProgress.current = false;
     }, 1500);
@@ -982,13 +1218,13 @@ function WatchPage() {
     const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
     setActiveCategoryKey(safeKey);
     setServerIdx(index);
+    const srvKey = (srv?.serverId || srv?.provider || (index === 1 ? "byfms" : (index === 2 ? "dghg" : "vidplay"))).toLowerCase();
+    setActiveServerId(srvKey);
+    setPreferredServer(srvKey);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
     setFailoverAttempt(0);
     failoverInProgress.current = false;
-    if (srv?.id) {
-      setPreferredServer(srv.id);
-    }
     // Immediately reload video iframe src with chosen server and audio track without full page reload
     setReloadKey((prev) => prev + 1);
   }
@@ -997,7 +1233,6 @@ function WatchPage() {
     const rawKey = String(catKey || "sub").toLowerCase().replace("-", "");
     const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
     setActiveCategoryKey(safeKey);
-    setServerIdx(0);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
     setFailoverAttempt(0);
@@ -1010,33 +1245,38 @@ function WatchPage() {
   return (
     <div className={`watch-page-wrapper ${theaterMode ? "theater-active" : ""}`}>
       <div
-        className={`container page watch-page ${theaterMode ? "theater-container" : ""
-          }`}
+        className={`container page watch-page ${
+          theaterMode ? "theater-container" : ""
+        }`}
       >
         {/* ── Compact Player Controls Header ── */}
         <div className="player-top-bar">
           <div className="player-meta-left">
             {/* ── Dedicated SUB / DUB Audio Toggle Buttons ── */}
             <div className="player-audio-toggle-group" style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
-              <button
-                type="button"
-                className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "sub" ? "active" : ""}`}
-                onClick={() => handleSelectCategory("sub")}
-                title="Switch to Japanese Audio with English Subtitles (SUB)"
-                style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-              >
-                SUB
-              </button>
-              <button
-                type="button"
-                className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "dub" ? "active" : ""}`}
-                onClick={() => handleSelectCategory("dub")}
-                title="Switch to English Dubbed Audio (DUB)"
-                style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-              >
-                DUB
-              </button>
-              {ssubConfig && (
+              {subConfig && getCategoryStatus(subConfig) === STATUS_TYPES.AVAILABLE && (
+                <button
+                  type="button"
+                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "sub" ? "active" : ""}`}
+                  onClick={() => handleSelectCategory("sub")}
+                  title="Switch to Japanese Audio with English Subtitles (SUB)"
+                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+                >
+                  SUB
+                </button>
+              )}
+              {dubConfig && getCategoryStatus(dubConfig) === STATUS_TYPES.AVAILABLE && (
+                <button
+                  type="button"
+                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "dub" ? "active" : ""}`}
+                  onClick={() => handleSelectCategory("dub")}
+                  title="Switch to English Dubbed Audio (DUB)"
+                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+                >
+                  DUB
+                </button>
+              )}
+              {ssubConfig && getCategoryStatus(ssubConfig) === STATUS_TYPES.AVAILABLE && (
                 <button
                   type="button"
                   className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "ssub" ? "active" : ""}`}
@@ -1056,8 +1296,9 @@ function WatchPage() {
             />
             {isCurrentCategoryAvailable && currentServer?.badge && (
               <span
-                className={`quality-badge-pill ${currentServer.badgeClass || "badge-fhd"
-                  }`}
+                className={`quality-badge-pill ${
+                  currentServer.badgeClass || "badge-fhd"
+                }`}
               >
                 {isTrailerActive ? "Trailer" : currentServer.badge}
               </span>
@@ -1072,8 +1313,8 @@ function WatchPage() {
               {isTrailerActive
                 ? "Official Trailer"
                 : isCurrentCategoryAvailable
-                  ? (currentServer?.name || `Server ${serverIdx + 1}`)
-                  : `${resolvedCategoryKey.toUpperCase()} Release Scheduled`}
+                ? (currentServer?.name || `Server ${serverIdx + 1}`)
+                : `${resolvedCategoryKey.toUpperCase()} Release Scheduled`}
             </span>
           </div>
 
@@ -1131,6 +1372,7 @@ function WatchPage() {
               mediaTitle={title}
               season={season}
               episode={episode}
+              posterPath={media?.poster_path}
               onManualReload={handleReloadStream}
             />
           ) : isCurrentCategoryAvailable && currentServer?.url && serverIdx >= 0 ? (
@@ -1138,7 +1380,7 @@ function WatchPage() {
               server={currentServer}
               serverName={currentServer.name || `Server ${serverIdx + 1}`}
               serverIndex={serverIdx}
-              totalServers={currentSources.length}
+              totalServers={allCategorySources.length}
               reloadKey={reloadKey}
               isTrailer={false}
               skipTimings={currentServer?.skipTimings || activeCatConfig?.skipTimings || null}
@@ -1147,6 +1389,7 @@ function WatchPage() {
               mediaTitle={title || ""}
               season={season}
               episode={episode}
+              posterPath={media?.poster_path}
               hasNextEpisode={hasNextEp}
               nextEpisodeNumber={episode + 1}
               nextEpisodeTitle={seasonData?.episodes?.find(ep => ep.episode_number === episode + 1)?.name || ""}
@@ -1238,6 +1481,7 @@ function WatchPage() {
           mediaContext={{ type, id, season, episode }}
           activeCategoryKey={resolvedCategoryKey}
           activeServerIndex={serverIdx}
+          activeServerId={activeServerId}
           onSelectCategory={handleSelectCategory}
           onSelectServer={handleManualSelectServer}
           onReloadStream={handleReloadStream}
@@ -1262,7 +1506,30 @@ function WatchPage() {
           <p className="media-synopsis">
             {media.overview || "No overview available."}
           </p>
+
+          {/* ── Watchlist Tracker (add to list / rate / track episodes) ── */}
+          <div style={{ marginTop: 16 }}>
+            <MediaWatchlistTracker
+              media={{
+                ...media,
+                tmdb_id: media.id,
+                media_type: type,
+                isAnime: contentType === "anime",
+              }}
+              mediaType={contentType === "anime" ? "anime" : type}
+              totalEpisodes={media.number_of_episodes || media.episodes || null}
+            />
+          </div>
         </div>
+
+        {/* ── Legal Streaming Options (TMDB JustWatch) — movies & TV only ── */}
+        {(type === "movie" || (type === "tv" && contentType !== "anime")) && (
+          <LegalWatchProviders
+            mediaType={type}
+            mediaId={media.id}
+            mediaTitle={title}
+          />
+        )}
 
         {/* ── TV Episodes List with Real-Time Availability ── */}
         {type === "tv" && (
@@ -1373,9 +1640,85 @@ function WatchPage() {
 }
 
 
+/* ─── Auth Callback ──────────────────────────────────────────────────────── */
+function AuthCallback() {
+  const navigate = useNavigate();
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!supabase) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    // Supabase automatically picks up the tokens from the URL hash/query
+    // when we call getSession or when onAuthStateChange fires.
+    // We just need to wait for the session to be established and then redirect.
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        // Small delay to ensure session is fully persisted
+        setTimeout(() => navigate("/", { replace: true }), 150);
+      }
+    });
+
+    // Also check if session is already established (e.g. from the hash)
+    supabase.auth.getSession().then(({ data: { session }, error: err }) => {
+      if (err) {
+        setError(err.message);
+      } else if (session) {
+        navigate("/", { replace: true });
+      }
+    });
+
+    // Safety timeout — if nothing happens within 10s, show an error
+    const timeout = setTimeout(() => {
+      setError("Authentication timed out. Please try signing in again.");
+    }, 10000);
+
+    return () => {
+      listener.subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [navigate]);
+
+  if (error) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="brand big">
+            <span className="brand-mark">A</span> Ani<span>kai</span>
+          </div>
+          <h1>Sign-in failed</h1>
+          <Notice text={error} />
+          <Link className="primary-btn" to="/login" style={{ marginTop: 16, display: "inline-flex" }}>
+            Try again
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card" style={{ textAlign: "center" }}>
+        <LoaderCircle className="spin" size={36} style={{ margin: "0 auto 16px" }} />
+        <h1 style={{ fontSize: 22 }}>Signing you in...</h1>
+        <p>Completing authentication with Google.</p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Login ──────────────────────────────────────────────────────────────── */
 function Login() {
+  const session = useAuth();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState("");
+
+  useEffect(() => {
+    if (session) navigate("/", { replace: true });
+  }, [session, navigate]);
+
   async function oauth(provider) {
     setBusy(provider);
     try {
@@ -1431,29 +1774,168 @@ function Login() {
 /* ─── Profile ────────────────────────────────────────────────────────────── */
 function Profile() {
   const session = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "continue";
+  const [activeTab, setActiveTab] = useState(initialTab);
+  
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && ["overview", "continue", "history", "watchlist", "favorites"].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
+  
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
+  const fullName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name;
+  const email = session?.user?.email;
+  
+  const memberSince = session?.user?.created_at 
+    ? new Date(session.user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) 
+    : "Recently";
+
+  useEffect(() => {
+    if (!session && supabase) {
+      const timer = setTimeout(() => {
+        if (!session) navigate("/login", { replace: true });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [session, navigate]);
+
+  async function logout() {
+    if (supabase) {
+      await supabase.auth.signOut();
+      navigate("/", { replace: true });
+    }
+  }
+
+  const allProgress = Object.values(getAllWatchProgress()).sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (!session) {
+    return <div className="container page"><LoaderCircle className="spin" size={32} style={{margin: "auto", display: "block", marginTop: "10vh", color: "#8b8d9c"}}/></div>;
+  }
+
   return (
-    <div className="container page">
-      <div className="profile-card">
-        <div className="profile-avatar">
-          <User size={36} />
+    <div className="profile-page-modern">
+      {/* Banner & Header */}
+      <div className="profile-banner">
+        <div className="profile-banner-overlay"></div>
+      </div>
+      
+      <div className="container profile-header-container">
+        <div className="profile-header-info">
+          <div className="profile-avatar-large">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" />
+            ) : (
+              <User size={50} />
+            )}
+          </div>
+          <div className="profile-text-details">
+            <h1>{fullName || email || "Guest"}</h1>
+            <p className="profile-email">{email}</p>
+            <p className="profile-joined">Member since {memberSince}</p>
+          </div>
         </div>
-        <div>
-          <div className="eyebrow">Account</div>
-          <h1>
-            {session?.user?.user_metadata?.name ||
-              session?.user?.email ||
-              "Guest"}
-          </h1>
-          <p>{session?.user?.email || "Sign in to view your account."}</p>
+        
+        <div className="profile-actions">
+          <button className="ghost-btn edit-profile-btn" onClick={() => alert("Edit profile feature coming soon!")}>
+            Edit Profile
+          </button>
+          <button className="primary-btn logout-btn" onClick={logout}>
+            Sign out
+          </button>
         </div>
       </div>
-      <div className="empty-state">
-        <Plus size={28} />
-        <h2>Your list is ready</h2>
-        <p>
-          Favorites and watch history can be stored per user once your Supabase
-          database tables are configured.
-        </p>
+
+      {/* Tabs */}
+      <div className="container profile-tabs-container">
+        <div className="profile-tabs">
+          {["overview", "continue", "history", "watchlist", "favorites"].map(tab => (
+            <button 
+              key={tab} 
+              className={`profile-tab ${activeTab === tab ? "active" : ""}`}
+              onClick={() => handleTabChange(tab)}
+            >
+              {tab === "continue" ? "Continue Watching" : 
+               tab === "history" ? "Watch History" : 
+               tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="container profile-content">
+        {activeTab === "continue" && (
+          <div className="profile-continue-section">
+            {allProgress.length > 0 ? (
+              <div className="continue-grid">
+                {allProgress.map(prog => {
+                  const isTV = prog.type === 'tv' || prog.type === 'anime';
+                  const posterImg = prog.posterPath 
+                    ? (prog.posterPath.startsWith("http") ? prog.posterPath : `https://image.tmdb.org/t/p/w500${prog.posterPath}`) 
+                    : "https://placehold.co/600x900/101217/ffffff?text=No+Poster";
+                  
+                  return (
+                    <div key={prog.key} className="continue-card">
+                      <div className="continue-poster">
+                        <img loading="lazy" src={posterImg} alt={prog.title} />
+                        <div className="continue-overlay">
+                          <Link to={`/watch/${prog.type}/${prog.id}?s=${prog.season}&e=${prog.episode}`} className="play-circle">
+                            <Play fill="white" size={24} />
+                          </Link>
+                        </div>
+                        <div className="continue-progress-bar">
+                          <div className="continue-progress-fill" style={{ width: `${prog.progressPercent}%` }}></div>
+                        </div>
+                      </div>
+                      <div className="continue-info">
+                        <h3>{prog.title}</h3>
+                        <p className="continue-meta">
+                          {isTV ? `S${prog.season} • E${prog.episode}` : "Movie"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Clock size={32} />
+                <h3>No Watch History</h3>
+                <p>Start watching some movies or shows and they will appear here.</p>
+                <Link to="/" className="primary-btn" style={{marginTop: 16, display: "inline-flex"}}>Explore Content</Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Watchlist Dashboard (Polymorphic — movies, TV, anime) ── */}
+        {activeTab === "watchlist" && (
+          <WatchlistDashboard
+            onSelectMedia={(item) => {
+              const routeType = item.media_type === "anime" ? "tv" : (item.media_type || "movie");
+              const mediaId = item.tmdb_id || item.anilist_id || item.media_id;
+              navigate(`/watch/${routeType}/${mediaId}`);
+            }}
+          />
+        )}
+
+        {/* Other tabs placeholders */}
+        {activeTab !== "continue" && activeTab !== "watchlist" && (
+          <div className="empty-state">
+            <Layers size={32} />
+            <h3>{activeTab === "history" ? "Watch History" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h3>
+            <p>This feature will be available once your Supabase database tables are fully configured.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1515,6 +1997,39 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ─── Notifications ──────────────────────────────────────────────────────── */
+function Notifications() {
+  const {
+    notifications,
+    readIds,
+    unreadCount,
+    markAsRead,
+    markAllRead,
+  } = useNotifications();
+
+  return (
+    <div className="container page notif-center-page">
+      <div className="notif-page-heading-box">
+        <div className="notif-heading-text">
+          <h1>Release Notifications</h1>
+          <p>
+            Discover newly released anime episodes, movie premieres, and upcoming broadcast countdowns.
+          </p>
+        </div>
+      </div>
+
+      <NotificationPanel
+        notifications={notifications}
+        readIds={readIds}
+        unreadCount={unreadCount}
+        onMarkAsRead={markAsRead}
+        onMarkAllRead={markAllRead}
+        isDropdown={false}
+      />
+    </div>
+  );
+}
+
 /* ─── App ────────────────────────────────────────────────────────────────── */
 export default function App() {
   return (
@@ -1526,8 +2041,12 @@ export default function App() {
           <Route path="/tv" element={<Listing type="tv" />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/watch/:type/:id" element={<WatchPage />} />
+          <Route path="/movie/:id" element={<WatchPage />} />
+          <Route path="/tv/:id" element={<WatchPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route
             path="*"
             element={

@@ -1,4 +1,4 @@
-const KEY = import.meta.env.APP_TMDB_API_KEY;
+const KEY = import.meta?.env?.APP_TMDB_API_KEY || import.meta?.env?.VITE_TMDB_API_KEY || "0b6a999c7167cc96bd009bd279d62600";
 const BASE = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p/";
 
@@ -18,18 +18,72 @@ export const tmdbImage = (path, size = "w500") =>
 export const getTrending = () => request("/trending/all/week");
 export const getPopularMovies = () => request("/movie/popular");
 export const getPopularTV = () => request("/tv/popular");
+export const getNowPlayingMovies = () => request("/movie/now_playing");
+export const getUpcomingMovies = () => request("/movie/upcoming");
+export const getAiringTodayTV = () => request("/tv/airing_today");
+export const getOnTheAirTV = () => request("/tv/on_the_air");
+export const getDiscoverAnime = () =>
+  request("/discover/tv", { with_genres: "16", sort_by: "popularity.desc" });
 export const searchMulti = (query) =>
   request("/search/multi", { query, include_adult: "false" });
 
-export const getMovie = (id) =>
-  request(`/movie/${id}`, {
-    append_to_response: "credits,videos,external_ids,recommendations,similar",
-  });
+export const findByExternalId = (externalId) =>
+  request(`/find/${externalId}`, { external_source: "imdb_id" });
 
-export const getTV = (id) =>
-  request(`/tv/${id}`, {
+export const getMovie = async (id) => {
+  if (typeof id === "string" && id.startsWith("tt")) {
+    try {
+      const findRes = await findByExternalId(id);
+      const match = findRes?.movie_results?.[0];
+      if (match?.id) {
+        return await request(`/movie/${match.id}`, {
+          append_to_response: "credits,videos,external_ids,recommendations,similar",
+        });
+      }
+    } catch (_) {}
+    return {
+      id,
+      imdb_id: id,
+      external_ids: { imdb_id: id },
+      title: `Movie (${id})`,
+      overview: "Streaming available via high-definition multi-server network.",
+      vote_average: 8.0,
+      release_date: "",
+      genres: [],
+    };
+  }
+  return request(`/movie/${id}`, {
     append_to_response: "credits,videos,external_ids,recommendations,similar",
   });
+};
+
+export const getTV = async (id) => {
+  if (typeof id === "string" && id.startsWith("tt")) {
+    try {
+      const findRes = await findByExternalId(id);
+      const match = findRes?.tv_results?.[0];
+      if (match?.id) {
+        return await request(`/tv/${match.id}`, {
+          append_to_response: "credits,videos,external_ids,recommendations,similar",
+        });
+      }
+    } catch (_) {}
+    return {
+      id,
+      imdb_id: id,
+      external_ids: { imdb_id: id },
+      name: `Series (${id})`,
+      overview: "Streaming available via high-definition multi-server network.",
+      vote_average: 8.0,
+      first_air_date: "",
+      genres: [],
+      number_of_seasons: 1,
+    };
+  }
+  return request(`/tv/${id}`, {
+    append_to_response: "credits,videos,external_ids,recommendations,similar",
+  });
+};
 
 export const getSeason = (id, season) =>
   request(`/tv/${id}/season/${season}`);

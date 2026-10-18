@@ -4,7 +4,12 @@
  * Supports SUB, S-SUB, DUB with independent release times, countdowns, and WebVTT subtitle tracks.
  */
 
-import { generateDynamicCategories, applyAudioTrackToUrl } from "./sources.js";
+import {
+  generateDynamicCategories,
+  applyAudioTrackToUrl,
+  buildSourceEntry,
+  SERVERS,
+} from "./sources.js";
 import { getCategoryStatus, STATUS_TYPES } from "../utils/releaseUtils.js";
 
 // Sample WebVTT subtitle tracks (supports English, Khmer, Chinese, Japanese, etc.)
@@ -618,89 +623,108 @@ export function getMediaReleaseData({
   episode = 1,
   imdbId = null,
 }) {
-  const mediaKey = String(id);
-  const customMedia = CUSTOM_MEDIA_DATABASE[mediaKey];
+  try {
+    const mediaKey = String(id || "");
+    const isImdb = mediaKey.startsWith("tt");
+    const effectiveImdbId = imdbId || (isImdb ? mediaKey : null);
+    const customMedia = CUSTOM_MEDIA_DATABASE[mediaKey];
 
-  if (customMedia) {
-    if (type === "tv") {
-      const seasonConfig = customMedia.seasons?.[season];
-      const episodeConfig = seasonConfig?.episodes?.find(
-        (ep) => ep.number === Number(episode)
-      );
+    if (customMedia) {
+      const ctx = { type, id, season, episode, imdbId: effectiveImdbId };
+      if (type === "tv") {
+        const seasonConfig = customMedia.seasons?.[season];
+        const episodeConfig = seasonConfig?.episodes?.find(
+          (ep) => ep.number === Number(episode)
+        );
 
-      if (episodeConfig) {
-        // Return validated episode category configuration
+        if (episodeConfig) {
+          // Return validated episode category configuration
+          return {
+            isCustom: true,
+            episodeNumber: episodeConfig.number,
+            title: episodeConfig.title,
+            overview: episodeConfig.overview,
+            rating: episodeConfig.rating,
+            sub: episodeConfig.sub ? validateCategoryConfig(episodeConfig.sub, "sub", ctx) : null,
+            ssub: episodeConfig.ssub ? validateCategoryConfig(episodeConfig.ssub, "ssub", ctx) : null,
+            dub: episodeConfig.dub ? validateCategoryConfig(episodeConfig.dub, "dub", ctx) : null,
+          };
+        }
+      } else {
+        // Movie custom configuration
         return {
           isCustom: true,
-          episodeNumber: episodeConfig.number,
-          title: episodeConfig.title,
-          overview: episodeConfig.overview,
-          rating: episodeConfig.rating,
-          sub: episodeConfig.sub ? validateCategoryConfig(episodeConfig.sub, "sub") : null,
-          ssub: episodeConfig.ssub ? validateCategoryConfig(episodeConfig.ssub, "ssub") : null,
-          dub: episodeConfig.dub ? validateCategoryConfig(episodeConfig.dub, "dub") : null,
+          title: customMedia.title,
+          sub: customMedia.sub ? validateCategoryConfig(customMedia.sub, "sub", ctx) : null,
+          ssub: customMedia.ssub ? validateCategoryConfig(customMedia.ssub, "ssub", ctx) : null,
+          dub: customMedia.dub ? validateCategoryConfig(customMedia.dub, "dub", ctx) : null,
         };
       }
-    } else {
-      // Movie custom configuration
-      return {
-        isCustom: true,
-        title: customMedia.title,
-        sub: customMedia.sub ? validateCategoryConfig(customMedia.sub, "sub") : null,
-        ssub: customMedia.ssub ? validateCategoryConfig(customMedia.ssub, "ssub") : null,
-        dub: customMedia.dub ? validateCategoryConfig(customMedia.dub, "dub") : null,
-      };
     }
-  }
 
-  // Fallback: dynamically generate categorized streaming configuration using
-  // server capability (contentType + audio support) + health filtering.
-  // TV shows default to 'anime' server pool; movies use movie pool.
-  const autoContentType = type === "tv" ? "anime" : "movie";
-  return generateDefaultCategoriesFromServers({
-    type,
-    id,
-    season,
-    episode,
-    imdbId,
-    contentType: autoContentType,
-  });
+    // Fallback: dynamically generate categorized streaming configuration using
+    // server capability (contentType + audio support) + health filtering.
+    // TV shows default to 'anime' server pool; movies use movie pool.
+    const autoContentType = type === "tv" ? "anime" : "movie";
+    return generateDefaultCategoriesFromServers({
+      type,
+      id,
+      season,
+      episode,
+      imdbId: effectiveImdbId,
+      contentType: autoContentType,
+    });
+  } catch (err) {
+    console.warn("[getMediaReleaseData] Caught error:", err);
+    return null;
+  }
 }
 
 /**
  * Validates a category configuration to ensure safe rendering without crashes.
- * Automatically appends audio parameter (SUB / DUB) and ensures alternative
- * multi-server array fields (Server 1, Server 2, Server 3) are populated.
+ * Enforces the canonical 3 providers: Vidplay, BYFMS, and DGHG for all available streams.
  */
-function validateCategoryConfig(cat, categoryKey = "sub") {
-  if (!cat) return null;
-  const status = getCategoryStatus(cat);
-  const rawSources = Array.isArray(cat.sources) ? cat.sources : [];
+function validateCategoryConfig(cat, categoryKey = "sub", mediaContext = {}) {
+  try {
+    if (!cat) return null;
+    const status = getCategoryStatus(cat);
+    if (status !== STATUS_TYPES.AVAILABLE) {
+      return {
+        status,
+        releaseAt: cat.releaseAt || null,
+        sources: [],
+      };
+    }
 
-  const sources = rawSources.map((s, idx) => {
-    const rawUrl = s.url || "";
-    const url = applyAudioTrackToUrl(rawUrl, categoryKey);
-    const serverNum = idx + 1;
-    const cleanName = s.name ? s.name.replace(/^Server\s*\d+\s*[·•-]\s*/i, "") : `Mirror ${serverNum}`;
+    // Generate canonical 3 providers: Vidplay, BYFMS, DGHG
+    const providers = SERVERS.filter((s) => ["vidplay", "byfms", "dghg"].includes(s.id));
+    const subtitles = cat.sources?.[0]?.subtitles || SAMPLE_SUBTITLES.multilingual;
+
+    const sources = providers.map((srv, idx) =>
+      buildSourceEntry(
+        srv,
+        {
+          type: mediaContext.type || "tv",
+          id: mediaContext.id || "82452",
+          season: mediaContext.season || 1,
+          episode: mediaContext.episode || 1,
+          imdbId: mediaContext.imdbId,
+          subtitles,
+          audioType: categoryKey,
+        },
+        idx
+      )
+    );
 
     return {
-      id: s.id || `srv-${idx}-${categoryKey}`,
-      serverId: s.id || `srv-${idx}`,
-      name: `Server ${serverNum} · ${cleanName}`,
-      quality: s.quality || "1080p Full HD",
-      badge: categoryKey === "dub" ? "English DUB" : (s.badge || "1080p HD"),
-      badgeClass: s.badgeClass || (categoryKey === "dub" ? "badge-fhd" : "badge-hd"),
-      url,
-      subtitles: Array.isArray(s.subtitles) ? s.subtitles : [],
-      audioType: categoryKey,
+      status,
+      releaseAt: cat.releaseAt || null,
+      sources,
     };
-  });
-
-  return {
-    status,
-    releaseAt: cat.releaseAt || null,
-    sources,
-  };
+  } catch (err) {
+    console.warn("[validateCategoryConfig] Caught error:", err);
+    return null;
+  }
 }
 
 /**
@@ -717,27 +741,32 @@ function generateDefaultCategoriesFromServers({
   imdbId,
   contentType,
 }) {
-  // Determine content classification:
-  // Known anime IDs in CUSTOM_MEDIA_DATABASE are tagged; for generic TMDB content
-  // we treat TV as potential anime (broader server pool) and movies as movie-type.
-  const resolvedContentType = contentType ||
-    (type === "tv" ? "anime" : "movie");
+  try {
+    // Determine content classification:
+    // Known anime IDs in CUSTOM_MEDIA_DATABASE are tagged; for generic TMDB content
+    // we treat TV as potential anime (broader server pool) and movies as movie-type.
+    const resolvedContentType = contentType ||
+      (type === "tv" ? "anime" : "movie");
 
-  const categories = generateDynamicCategories({
-    contentType: resolvedContentType,
-    type,
-    id,
-    imdbId,
-    season,
-    episode,
-    subtitles: SAMPLE_SUBTITLES.standard,
-  });
+    const categories = generateDynamicCategories({
+      contentType: resolvedContentType,
+      type,
+      id,
+      imdbId,
+      season,
+      episode,
+      subtitles: SAMPLE_SUBTITLES.standard,
+    });
 
-  return {
-    isCustom: false,
-    contentType: resolvedContentType,
-    ...categories,
-  };
+    return {
+      isCustom: false,
+      contentType: resolvedContentType,
+      ...categories,
+    };
+  } catch (err) {
+    console.warn("[generateDefaultCategoriesFromServers] Caught error:", err);
+    return null;
+  }
 }
 
 // ── Admin / Data Management API functions ──

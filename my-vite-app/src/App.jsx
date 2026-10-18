@@ -6,6 +6,7 @@ import {
   useNavigate,
   useParams,
   useSearchParams,
+  useLocation,
 } from "react-router-dom";
 import {
   Play,
@@ -741,7 +742,8 @@ function EmbedPlayer({ url, reloadKey, isTrailer = false }) {
 
 /* ─── Watch page ─────────────────────────────────────────────────────────── */
 function WatchPage() {
-  const { type, id } = useParams();
+  const params = useParams();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [media, setMedia] = useState(null);
   const [error, setError] = useState("");
@@ -751,10 +753,18 @@ function WatchPage() {
   const [episode, setEpisode] = useState(() => Number(searchParams.get("episode")) || 1);
   const [seasonData, setSeasonData] = useState(null);
 
+  // Normalize route params: handle /movie/:id, /tv/:id, and /watch/:type/:id
+  const rawType = params.type || (location.pathname.startsWith("/tv") ? "tv" : "movie");
+  const type = rawType === "tv" ? "tv" : "movie";
+  const rawId = params.id;
+  const id = typeof rawId === "string" ? rawId.trim() : String(rawId || "");
+  const isImdb = id.startsWith("tt");
+
   // Streaming category & server controls
   const preferredAudio = getPreferredAudio();
   const [activeCategoryKey, setActiveCategoryKey] = useState(preferredAudio);
   const [serverIdx, setServerIdx] = useState(0);
+  const [activeServerId, setActiveServerId] = useState("vidplay");
   const [activeSubtitleId, setActiveSubtitleId] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -770,9 +780,21 @@ function WatchPage() {
 
   // IMPORTANT: useServerHealth must live here — BEFORE any early returns — to satisfy
   // React Hook rules. releaseData is passed in via computed value from `media` state.
-  const releaseDataForHook = media
-    ? getMediaReleaseData({ type, id, season, episode, imdbId: media.external_ids?.imdb_id || media.imdb_id })
-    : null;
+  let releaseDataForHook = null;
+  try {
+    if (media) {
+      releaseDataForHook = getMediaReleaseData({
+        type,
+        id,
+        season,
+        episode,
+        imdbId: media.external_ids?.imdb_id || media.imdb_id || (isImdb ? id : null),
+      });
+    }
+  } catch (hookErr) {
+    console.warn("Failed to get releaseDataForHook:", hookErr);
+  }
+
   const contentTypeForHook =
     releaseDataForHook?.contentType ||
     CUSTOM_MEDIA_DATABASE[String(id)]?.contentType ||
@@ -812,15 +834,35 @@ function WatchPage() {
   }, [type, id, season, episode]);
 
   useEffect(() => {
+    let isCancelled = false;
     setMedia(null);
     setError("");
-    (type === "tv" ? getTV(id) : getMovie(id))
-      .then(setMedia)
-      .catch((e) => {
+
+    async function loadMediaData() {
+      try {
+        let fetchedMedia = null;
+
+        // Step 1: Attempt TMDB / External fetcher
+        try {
+          fetchedMedia = await (type === "tv" ? getTV(id) : getMovie(id));
+        } catch (fetchErr) {
+          console.warn("[WatchPage] Primary TMDB fetch failed:", fetchErr);
+        }
+
+        if (isCancelled) return;
+
+        if (fetchedMedia) {
+          setMedia(fetchedMedia);
+          return;
+        }
+
+        // Step 2: Check custom local database
         const custom = CUSTOM_MEDIA_DATABASE[String(id)];
         if (custom) {
           setMedia({
             id: custom.id,
+            imdb_id: isImdb ? id : undefined,
+            external_ids: isImdb ? { imdb_id: id } : {},
             title: custom.title,
             name: custom.title,
             overview:
@@ -831,11 +873,56 @@ function WatchPage() {
               : 1,
             vote_average: 9.2,
           });
-        } else {
-          setError(e.message);
+          return;
         }
-      });
-  }, [type, id]);
+
+        // Step 3: If id starts with 'tt' (IMDb ID) and wasn't found in TMDB, create a safe fallback
+        // media object so Vidplay, BYFMS, and DGHG can still stream the content cleanly
+        if (isImdb) {
+          setMedia({
+            id,
+            imdb_id: id,
+            external_ids: { imdb_id: id },
+            title: `Title (${id})`,
+            name: `Title (${id})`,
+            overview: "Stream high-definition playback with multi-server support.",
+            vote_average: 8.0,
+            number_of_seasons: 1,
+          });
+          return;
+        }
+
+        // Step 4: Gracefully fall back to an error notice instead of crashing UI
+        setError("Unable to find media details. Please choose a different title or server.");
+      } catch (err) {
+        if (!isCancelled) {
+          console.error("[WatchPage] Critical load error:", err);
+          if (isImdb) {
+            setMedia({
+              id,
+              imdb_id: id,
+              external_ids: { imdb_id: id },
+              title: `Title (${id})`,
+              name: `Title (${id})`,
+              overview: "Stream high-definition playback with multi-server support.",
+              vote_average: 8.0,
+              number_of_seasons: 1,
+            });
+          } else {
+            setError(err?.message || "An unexpected error occurred while loading this media.");
+          }
+        }
+      }
+    }
+
+    if (id) {
+      loadMediaData();
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [type, id, isImdb]);
 
   useEffect(() => {
     setSeason(1);
@@ -843,12 +930,22 @@ function WatchPage() {
   }, [type, id]);
 
   useEffect(() => {
-    if (type === "tv") {
+    if (type === "tv" && id) {
+      let isCancelled = false;
       const custom = CUSTOM_MEDIA_DATABASE[String(id)];
       const customSeasonEps = custom?.seasons?.[season]?.episodes;
 
-      getSeason(id, season)
-        .then((res) => {
+      async function loadSeasonData() {
+        try {
+          let res = null;
+          if (!isImdb || !isNaN(Number(id))) {
+            try {
+              res = await getSeason(id, season);
+            } catch (_) {}
+          }
+
+          if (isCancelled) return;
+
           if (customSeasonEps && res?.episodes) {
             const merged = res.episodes.map((ep) => {
               const customEp = customSeasonEps.find(
@@ -873,12 +970,9 @@ function WatchPage() {
             });
             merged.sort((a, b) => a.episode_number - b.episode_number);
             setSeasonData({ episodes: merged });
-          } else {
+          } else if (res) {
             setSeasonData(res);
-          }
-        })
-        .catch(() => {
-          if (customSeasonEps) {
+          } else if (customSeasonEps) {
             setSeasonData({
               episodes: customSeasonEps.map((ce) => ({
                 id: `custom-ep-${ce.number}`,
@@ -889,11 +983,32 @@ function WatchPage() {
               })),
             });
           } else {
+            setSeasonData({
+              episodes: [
+                {
+                  id: `ep-${episode}`,
+                  episode_number: episode,
+                  name: `Episode ${episode}`,
+                  overview: "Streaming episode",
+                  vote_average: 8.0,
+                },
+              ],
+            });
+          }
+        } catch (seasonErr) {
+          console.warn("[WatchPage] Season data fetch error:", seasonErr);
+          if (!isCancelled) {
             setSeasonData(null);
           }
-        });
+        }
+      }
+
+      loadSeasonData();
+      return () => {
+        isCancelled = true;
+      };
     }
-  }, [type, id, season, media?.number_of_seasons]);
+  }, [type, id, season, isImdb, media?.number_of_seasons]);
   const pageTitle = media?.title || media?.name;
   // Update browser tab title with Anikai branding
   useEffect(() => {
@@ -911,17 +1026,22 @@ function WatchPage() {
     );
   if (!media) return <Loader />;
 
-  const imdbId = media.external_ids?.imdb_id || media.imdb_id;
-  const trailerUrl = getOfficialTrailerUrl(media.videos);
+  const imdbId = media.external_ids?.imdb_id || media.imdb_id || (isImdb ? id : null);
+  const trailerUrl = media.videos ? getOfficialTrailerUrl(media.videos) : null;
 
   // Resolve structured SUB, S-SUB, DUB sources and release schedule
-  const releaseData = getMediaReleaseData({
-    type,
-    id,
-    season,
-    episode,
-    imdbId,
-  });
+  let releaseData = null;
+  try {
+    releaseData = getMediaReleaseData({
+      type,
+      id,
+      season,
+      episode,
+      imdbId,
+    });
+  } catch (err) {
+    console.warn("[WatchPage] Error computing releaseData:", err);
+  }
 
   const subConfig = releaseData?.sub;
   const ssubConfig = releaseData?.ssub;
@@ -938,15 +1058,15 @@ function WatchPage() {
   let resolvedCategoryKey = activeCategoryKey;
   let activeCatConfig = releaseData?.[resolvedCategoryKey];
 
-  // If the preferred audio category isn't in releaseData, fall back gracefully
-  if (!activeCatConfig) {
-    if (subConfig) {
+  // If the active category isn't in releaseData or is not available, fall back gracefully
+  if (!activeCatConfig || getCategoryStatus(activeCatConfig) !== STATUS_TYPES.AVAILABLE) {
+    if (subConfig && getCategoryStatus(subConfig) === STATUS_TYPES.AVAILABLE) {
       activeCatConfig = subConfig;
       resolvedCategoryKey = "sub";
-    } else if (dubConfig) {
+    } else if (dubConfig && getCategoryStatus(dubConfig) === STATUS_TYPES.AVAILABLE) {
       activeCatConfig = dubConfig;
       resolvedCategoryKey = "dub";
-    } else if (ssubConfig) {
+    } else if (ssubConfig && getCategoryStatus(ssubConfig) === STATUS_TYPES.AVAILABLE) {
       activeCatConfig = ssubConfig;
       resolvedCategoryKey = "ssub";
     }
@@ -959,18 +1079,15 @@ function WatchPage() {
     activeCategoryStatus === STATUS_TYPES.AVAILABLE;
 
   const allCategorySources = activeCatConfig?.sources || [];
-
-  // Dynamically rank sources for this exact episode — prioritises:
-  //   ① WORKING + English Subtitles ② WORKING + Any Subtitles ③ UNVERIFIED ④ DEGRADED
-  // Servers that are UNAVAILABLE or OFFLINE are filtered out automatically.
-  const rankedSources = rankSources(
-    allCategorySources,
-    (src) => getSourceStatus(src, resolvedCategoryKey),
-    resolvedCategoryKey
-  );
-  const currentSources =
-    rankedSources.length > 0 ? rankedSources.map((r) => r.source) : allCategorySources;
-  const currentServer = currentSources[serverIdx] || currentSources[0] || null;
+  const currentServer =
+    allCategorySources.find(
+      (s) =>
+        (s.serverId || s.provider || "").toLowerCase() ===
+        activeServerId.toLowerCase()
+    ) ||
+    allCategorySources[serverIdx] ||
+    allCategorySources[0] ||
+    null;
 
   // Resolve subtitles from the episode-level health result first, then source metadata
   const currentServerStatus = currentServer
@@ -1068,8 +1185,6 @@ function WatchPage() {
     if (failedServerId) {
       recordServerFailure(failedServerId);
       setTriedServerIds((prev) => new Set([...prev, failedServerId]));
-      // Mark this exact episode+server as UNAVAILABLE in the health service
-      // so it is skipped in future rankings for this session
       try {
         reportRuntimePlaybackIssue({
           serverId: failedServerId,
@@ -1083,16 +1198,16 @@ function WatchPage() {
       } catch (_) {}
     }
 
-    // Find next untried source from ranked list
-    const nextIndex = currentSources.findIndex(
-      (src, idx) => idx > serverIdx && !triedServerIds.has(src.id)
-    );
-    if (nextIndex !== -1) {
-      setServerIdx(nextIndex);
-    } else {
-      // All sources failed
-      setServerIdx(-1); // signals error to player
-    }
+    const baseFailed = (failedServerId || activeServerId || "").replace(/-sub$|-dub$|-ssub$/, "").toLowerCase();
+    const serverOrder = ["vidplay", "byfms", "dghg"];
+    const currIdx = Math.max(0, serverOrder.indexOf(baseFailed));
+    const nextIdx = (currIdx + 1) % serverOrder.length;
+    const nextServerId = serverOrder[nextIdx];
+
+    setActiveServerId(nextServerId);
+    setServerIdx(nextIdx);
+    setReloadKey((prev) => prev + 1);
+
     setTimeout(() => {
       failoverInProgress.current = false;
     }, 1500);
@@ -1103,13 +1218,13 @@ function WatchPage() {
     const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
     setActiveCategoryKey(safeKey);
     setServerIdx(index);
+    const srvKey = (srv?.serverId || srv?.provider || (index === 1 ? "byfms" : (index === 2 ? "dghg" : "vidplay"))).toLowerCase();
+    setActiveServerId(srvKey);
+    setPreferredServer(srvKey);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
     setFailoverAttempt(0);
     failoverInProgress.current = false;
-    if (srv?.id) {
-      setPreferredServer(srv.id);
-    }
     // Immediately reload video iframe src with chosen server and audio track without full page reload
     setReloadKey((prev) => prev + 1);
   }
@@ -1118,7 +1233,6 @@ function WatchPage() {
     const rawKey = String(catKey || "sub").toLowerCase().replace("-", "");
     const safeKey = rawKey === "ssub" ? "ssub" : (rawKey === "dub" ? "dub" : "sub");
     setActiveCategoryKey(safeKey);
-    setServerIdx(0);
     setIsTrailerActive(false);
     setTriedServerIds(new Set());
     setFailoverAttempt(0);
@@ -1140,25 +1254,29 @@ function WatchPage() {
           <div className="player-meta-left">
             {/* ── Dedicated SUB / DUB Audio Toggle Buttons ── */}
             <div className="player-audio-toggle-group" style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
-              <button
-                type="button"
-                className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "sub" ? "active" : ""}`}
-                onClick={() => handleSelectCategory("sub")}
-                title="Switch to Japanese Audio with English Subtitles (SUB)"
-                style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-              >
-                SUB
-              </button>
-              <button
-                type="button"
-                className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "dub" ? "active" : ""}`}
-                onClick={() => handleSelectCategory("dub")}
-                title="Switch to English Dubbed Audio (DUB)"
-                style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
-              >
-                DUB
-              </button>
-              {ssubConfig && (
+              {subConfig && getCategoryStatus(subConfig) === STATUS_TYPES.AVAILABLE && (
+                <button
+                  type="button"
+                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "sub" ? "active" : ""}`}
+                  onClick={() => handleSelectCategory("sub")}
+                  title="Switch to Japanese Audio with English Subtitles (SUB)"
+                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+                >
+                  SUB
+                </button>
+              )}
+              {dubConfig && getCategoryStatus(dubConfig) === STATUS_TYPES.AVAILABLE && (
+                <button
+                  type="button"
+                  className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "dub" ? "active" : ""}`}
+                  onClick={() => handleSelectCategory("dub")}
+                  title="Switch to English Dubbed Audio (DUB)"
+                  style={{ padding: "4px 10px", fontSize: "11px", fontWeight: 700 }}
+                >
+                  DUB
+                </button>
+              )}
+              {ssubConfig && getCategoryStatus(ssubConfig) === STATUS_TYPES.AVAILABLE && (
                 <button
                   type="button"
                   className={`player-tool-btn player-audio-btn ${resolvedCategoryKey === "ssub" ? "active" : ""}`}
@@ -1262,7 +1380,7 @@ function WatchPage() {
               server={currentServer}
               serverName={currentServer.name || `Server ${serverIdx + 1}`}
               serverIndex={serverIdx}
-              totalServers={currentSources.length}
+              totalServers={allCategorySources.length}
               reloadKey={reloadKey}
               isTrailer={false}
               skipTimings={currentServer?.skipTimings || activeCatConfig?.skipTimings || null}
@@ -1363,6 +1481,7 @@ function WatchPage() {
           mediaContext={{ type, id, season, episode }}
           activeCategoryKey={resolvedCategoryKey}
           activeServerIndex={serverIdx}
+          activeServerId={activeServerId}
           onSelectCategory={handleSelectCategory}
           onSelectServer={handleManualSelectServer}
           onReloadStream={handleReloadStream}
@@ -1922,6 +2041,8 @@ export default function App() {
           <Route path="/tv" element={<Listing type="tv" />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/watch/:type/:id" element={<WatchPage />} />
+          <Route path="/movie/:id" element={<WatchPage />} />
+          <Route path="/tv/:id" element={<WatchPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/profile" element={<Profile />} />

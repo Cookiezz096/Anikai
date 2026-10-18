@@ -1,16 +1,18 @@
 /**
  * sources.js
- * Streaming server registry with capability and health metadata.
+ * Streaming server registry with capability, health, and ad-quality metadata.
  *
  * Each server declares:
  *   - contentTypes: ['anime', 'movie', 'both']  — what content it can stream
  *   - supports.sub: boolean  — can serve SUB (subtitled) content
  *   - supports.dub: boolean  — can serve DUB (English/international dubbed) content
- *   - health: 'working' | 'unverified' | 'degraded' | 'unavailable' | 'offline'
+ *   - health: SERVER_HEALTH.*  — provider availability status
+ *   - adQuality: AD_QUALITY.*  — popup/ad intrusion level (separate from health)
  *   - movie(id, imdb): function returning embed URL for movies
  *   - tv(id, s, e, imdb): function returning embed URL for TV/anime episodes
  */
 
+// ─── Provider Health (availability) ────────────────────────────────────────
 export const SERVER_HEALTH = {
   WORKING:     "working",     // Direct verified active & playable source
   UNVERIFIED:  "unverified",  // Valid endpoint reachable; browser CORS limits deep manifest inspection, treated as playable
@@ -19,184 +21,128 @@ export const SERVER_HEALTH = {
   OFFLINE:     "offline",     // Host unreachable / DNS fail / connection refused (NOT playable)
 };
 
+// ─── Ad Quality (popup / ad intrusion — separate from health) ──────────────
+export const AD_QUALITY = {
+  CLEAN:         "clean",          // No ads or popups at all
+  LOW_ADS:       "low_ads",        // Occasional, non-intrusive banner ads only
+  MODERATE_ADS:  "moderate_ads",   // Pre-roll or interstitial ads, manageable
+  EXCESSIVE_ADS: "excessive_ads",  // Non-stop popup tabs / redirect storms
+  UNKNOWN:       "unknown",        // Not yet tested
+};
+
+// ─── Ad quality score for ranking (lower = more ad-friendly) ──────────────
+export const AD_QUALITY_SCORE = {
+  [AD_QUALITY.CLEAN]:         0,
+  [AD_QUALITY.LOW_ADS]:       1,
+  [AD_QUALITY.MODERATE_ADS]:  2,
+  [AD_QUALITY.EXCESSIVE_ADS]: 3,
+  [AD_QUALITY.UNKNOWN]:       2,  // Treat unknown as moderate-level risk
+};
+
+// ─── Human-readable labels for UI ─────────────────────────────────────────
+export const AD_QUALITY_LABEL = {
+  [AD_QUALITY.CLEAN]:         "No Ads",
+  [AD_QUALITY.LOW_ADS]:       "Low Ads",
+  [AD_QUALITY.MODERATE_ADS]:  "Moderate Ads",
+  [AD_QUALITY.EXCESSIVE_ADS]: "Excessive Ads",
+  [AD_QUALITY.UNKNOWN]:       "Unknown Ads",
+};
+
+// ─── CSS badge class for each tier ────────────────────────────────────────
+export const AD_QUALITY_CLASS = {
+  [AD_QUALITY.CLEAN]:         "ad-clean",
+  [AD_QUALITY.LOW_ADS]:       "ad-low",
+  [AD_QUALITY.MODERATE_ADS]:  "ad-moderate",
+  [AD_QUALITY.EXCESSIVE_ADS]: "ad-excessive",
+  [AD_QUALITY.UNKNOWN]:       "ad-unknown",
+};
+
 export const CONTENT_TYPES = {
   ANIME: "anime",
   MOVIE: "movie",
   BOTH:  "both",
 };
 
+// ─── Provider Registry ────────────────────────────────────────────────────
 export const SERVERS = [
-  // ── Anime + Movie servers supporting both SUB and DUB ─────────────────────
   {
-    id: "vidlink",
-    name: "VidLink HD",
+    id: "vidplay",
+    name: "Vidplay",
     quality: "1080p Ultra HD",
     badge: "1080p Ultra",
     badgeClass: "badge-fhd",
-    tag: "Ad-Shield Ready · Fast",
+    tag: "Fast · High Stability",
     recommended: true,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
     health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://vidlink.pro/movie/${id}`,
-    tv: (id, s, e) => `https://vidlink.pro/tv/${id}/${s}/${e}`,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const imdbId = (typeof id === "string" && id.startsWith("tt")) ? id : imdb;
+      if (imdbId) {
+        return `https://vidsrc.to/embed/movie?imdb=${encodeURIComponent(imdbId)}`;
+      }
+      return `https://vidsrc.to/embed/movie/${id}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const imdbId = (typeof id === "string" && id.startsWith("tt")) ? id : imdb;
+      if (imdbId) {
+        return `https://vidsrc.to/embed/tv?imdb=${encodeURIComponent(imdbId)}&season=${s}&episode=${e}`;
+      }
+      return `https://vidsrc.to/embed/tv/${id}/${s}/${e}`;
+    },
   },
   {
-    id: "vidsrcto",
-    name: "VidSrc TO",
+    id: "byfms",
+    name: "BYFMS",
     quality: "1080p Full HD",
     badge: "1080p HD",
     badgeClass: "badge-fhd",
-    tag: "High Stability · Shielded",
-    recommended: true,
-    contentTypes: [CONTENT_TYPES.BOTH],
-    supports: { sub: true, dub: true },
-    health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://vidsrc.to/embed/movie/${id}`,
-    tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
-  },
-  {
-    id: "vidsrcme",
-    name: "VidSrc ME",
-    quality: "1080p Full HD",
-    badge: "1080p HD",
-    badgeClass: "badge-fhd",
-    tag: "Direct Stream · Shielded",
+    tag: "Reliable Mirror · Fast HLS",
     recommended: false,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
     health: SERVER_HEALTH.WORKING,
-    movie: (id, imdb) =>
-      `https://vidsrc.me/embed/movie?tmdb=${id}${imdb ? `&imdb=${imdb}` : ""}`,
-    tv: (id, s, e, imdb) =>
-      `https://vidsrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}${imdb ? `&imdb=${imdb}` : ""}`,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://player.autoembed.cc/embed/movie/${targetId}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://player.autoembed.cc/embed/tv/${targetId}/${s}/${e}`;
+    },
   },
-
-  // ── Anime-only servers (SUB focus) ────────────────────────────────────────
   {
-    id: "autoembed",
-    name: "AutoEmbed",
+    id: "dghg",
+    name: "DGHG",
     quality: "1080p HD",
-    badge: "Anime Edge",
-    badgeClass: "badge-hd",
-    tag: "Global Edge CDN · Anime",
-    contentTypes: [CONTENT_TYPES.ANIME],
-    supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
-    tv: (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}`,
-  },
-  {
-    id: "embedsu",
-    name: "EmbedSu",
-    quality: "1080p HD",
-    badge: "SoftSub HD",
-    badgeClass: "badge-hd",
-    tag: "Fast HLS · Subtitles · Anime",
-    contentTypes: [CONTENT_TYPES.ANIME],
-    supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://embed.su/embed/movie/${id}`,
-    tv: (id, s, e) => `https://embed.su/embed/tv/${id}/${s}/${e}`,
-  },
-
-  // ── Movie-only servers ────────────────────────────────────────────────────
-  {
-    id: "superembed",
-    name: "Cinezo Super",
-    quality: "1080p HD",
-    badge: "Multi-HD",
-    badgeClass: "badge-multi",
-    tag: "Multiple Built-in Mirrors",
-    contentTypes: [CONTENT_TYPES.MOVIE],
-    supports: { sub: true, dub: true },
-    health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://multiembed.mov/?video_id=${id}&tmdb=1`,
-    tv: (id, s, e) =>
-      `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`,
-  },
-  {
-    id: "videasy",
-    name: "Videasy",
-    quality: "1080p HD",
-    badge: "Clean HD",
-    badgeClass: "badge-hd",
-    tag: "Clean HD Player",
-    contentTypes: [CONTENT_TYPES.MOVIE],
-    supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://player.videasy.net/movie/${id}`,
-    tv: (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
-  },
-  {
-    id: "2embed",
-    name: "2Embed",
-    quality: "HD Stream",
-    badge: "HD Stream",
-    badgeClass: "badge-hd",
-    tag: "Backup Mirror",
-    contentTypes: [CONTENT_TYPES.MOVIE],
-    supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.WORKING,
-    movie: (id) => `https://www.2embed.skin/embed/${id}`,
-    tv: (id, s, e) => `https://www.2embed.skin/embedtv/${id}&s=${s}&e=${e}`,
-  },
-
-  // ── Test scenario servers ─────────────────────────────────────────────────
-  {
-    id: "test-broken-anime",
-    name: "Anime Mirror (Broken Manifest)",
-    quality: "1080p HD",
-    badge: "Unavailable",
-    badgeClass: "badge-hd",
-    tag: "Simulated Broken Video Source",
-    contentTypes: [CONTENT_TYPES.ANIME],
-    supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.UNAVAILABLE, // Automatically hidden from playable servers
-    movie: () => "https://invalid-stream.example.com/broken-anime-movie",
-    tv: () => "https://invalid-stream.example.com/broken-anime-manifest.m3u8",
-  },
-  {
-    id: "test-unavailable-movie",
-    name: "Cinema Server (Stream Unavailable)",
-    quality: "1080p HD",
-    badge: "Unavailable",
-    badgeClass: "badge-hd",
-    tag: "Simulated Missing Stream Token",
-    contentTypes: [CONTENT_TYPES.MOVIE],
-    supports: { sub: true, dub: true },
-    health: SERVER_HEALTH.UNAVAILABLE, // Automatically hidden from playable servers
-    movie: () => "https://invalid-stream.example.com/unavailable-movie",
-    tv: () => "https://invalid-stream.example.com/unavailable-tv",
-  },
-  {
-    id: "test-offline-server",
-    name: "Offline Provider Mirror",
-    quality: "1080p HD",
-    badge: "Offline",
-    badgeClass: "badge-hd",
-    tag: "Simulated Down Host",
+    badge: "1080p HD",
+    badgeClass: "badge-fhd",
+    tag: "Backup Cloud Server",
+    recommended: false,
     contentTypes: [CONTENT_TYPES.BOTH],
     supports: { sub: true, dub: true },
-    health: SERVER_HEALTH.OFFLINE, // Automatically hidden from playable servers
-    movie: () => "https://offline-down-server-example-999.xyz/movie",
-    tv: () => "https://offline-down-server-example-999.xyz/tv",
-  },
-  {
-    id: "test-timeout-server",
-    name: "High Latency Mirror",
-    quality: "1080p HD",
-    badge: "Degraded",
-    badgeClass: "badge-hd",
-    tag: "Slow CDN / High Latency",
-    contentTypes: [CONTENT_TYPES.BOTH],
-    supports: { sub: true, dub: false },
-    health: SERVER_HEALTH.DEGRADED, // Playable with warning indicator
-    movie: (id) => `https://vidsrc.to/embed/movie/${id}`,
-    tv: (id, s, e) => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
+    health: SERVER_HEALTH.WORKING,
+    adQuality: AD_QUALITY.LOW_ADS,
+    movie: (id, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://player.videasy.net/movie/${targetId}`;
+    },
+    tv: (id, s, e, imdb) => {
+      const isImdb = (typeof id === "string" && id.startsWith("tt")) || (typeof imdb === "string" && imdb.startsWith("tt"));
+      const targetId = isImdb ? ((typeof id === "string" && id.startsWith("tt")) ? id : imdb) : id;
+      return `https://player.videasy.net/tv/${targetId}/${s}/${e}`;
+    },
   },
 ];
 
+// ─── Runtime-mutable health state ─────────────────────────────────────────
 /**
  * Server health state — runtime-mutable map of { [serverId]: SERVER_HEALTH }.
  */
@@ -220,15 +166,44 @@ export function getServerHealth(serverId) {
 }
 
 /**
- * Checks whether a server is considered "playable".
- * Playable states:
- *   - WORKING: Confirmed working
- *   - UNVERIFIED: Reached in browser (CORS-restricted, treated as active/playable)
- *   - DEGRADED: High latency (playable with warning)
- * Non-playable states:
- *   - UNAVAILABLE: Online host, but specific media manifest is broken/missing/404
- *   - OFFLINE: Host down / DNS fail
+ * Returns the ad quality of a server by id.
  */
+export function getServerAdQuality(serverId) {
+  const srv = SERVERS.find((s) => s.id === serverId);
+  return srv?.adQuality ?? AD_QUALITY.UNKNOWN;
+}
+
+/**
+ * Returns whether a provider's ad quality is acceptable for auto-selection.
+ * EXCESSIVE_ADS providers are NEVER auto-selected; they can still be manually chosen.
+ */
+export function isAdQualityAcceptable(adQuality) {
+  return (
+    adQuality === AD_QUALITY.CLEAN ||
+    adQuality === AD_QUALITY.LOW_ADS ||
+    adQuality === AD_QUALITY.MODERATE_ADS ||
+    adQuality === AD_QUALITY.UNKNOWN
+  );
+}
+
+/**
+ * Checks whether a server is considered "playable" based on health alone.
+ * Playable states: WORKING, UNVERIFIED, DEGRADED
+ * Non-playable states: UNAVAILABLE, OFFLINE
+ */
+export function isServerPlayable(serverIdOrHealth) {
+  if (!serverIdOrHealth) return false;
+  const status = Object.values(SERVER_HEALTH).includes(serverIdOrHealth)
+    ? serverIdOrHealth
+    : getServerHealth(serverIdOrHealth);
+
+  return (
+    status === SERVER_HEALTH.WORKING ||
+    status === SERVER_HEALTH.UNVERIFIED ||
+    status === SERVER_HEALTH.DEGRADED
+  );
+}
+
 /**
  * Generates a unique key for evaluating title/episode-specific source health.
  */
@@ -248,27 +223,15 @@ export function getSourceHealthKey({
   return `${baseServerId}:movie:${id}:${categoryKey}`;
 }
 
-export function isServerPlayable(serverIdOrHealth) {
-  if (!serverIdOrHealth) return false;
-  const status = Object.values(SERVER_HEALTH).includes(serverIdOrHealth)
-    ? serverIdOrHealth
-    : getServerHealth(serverIdOrHealth);
-
-  return (
-    status === SERVER_HEALTH.WORKING ||
-    status === SERVER_HEALTH.UNVERIFIED ||
-    status === SERVER_HEALTH.DEGRADED
-  );
-}
-
 /**
  * Returns a filtered list of servers based on:
  *   - contentType: 'anime' | 'movie'
  *   - audioType: 'sub' | 'dub' | null (null = no audio filter)
+ *   - allowExcessiveAds: defaults to false — hides EXCESSIVE_ADS providers from auto-selection
  *
  * Only returns servers that support the content and are currently PLAYABLE.
  */
-export function getServersForContent(contentType, audioType = null) {
+export function getServersForContent(contentType, audioType = null, allowExcessiveAds = false) {
   return SERVERS.filter((srv) => {
     // 1. Content type match
     const typeMatch =
@@ -284,13 +247,13 @@ export function getServersForContent(contentType, audioType = null) {
     // 3. Health & playability check
     if (!isServerPlayable(srv.id)) return false;
 
+    // 4. Ad quality gate — skip EXCESSIVE_ADS providers for auto-selection
+    if (!allowExcessiveAds && srv.adQuality === AD_QUALITY.EXCESSIVE_ADS) return false;
+
     return true;
   });
 }
 
-/**
- * Builds a source entry from a server definition for a specific piece of content.
- */
 /**
  * Safely appends or updates the audio track / language query parameter on an embed URL.
  * Preserves existing URL parameters (e.g. tmdb, imdb, seasons, etc.) while guaranteeing
@@ -340,32 +303,51 @@ export function buildSourceEntry(
   { type, id, imdbId, season, episode, subtitles = [], audioType = "sub" },
   index = 0
 ) {
-  let rawUrl = type === "tv"
-    ? srv.tv(id, season, episode, imdbId)
-    : srv.movie(id, imdbId);
+  try {
+    const isImdb = typeof id === "string" && id.startsWith("tt");
+    const effectiveImdb = imdbId || (isImdb ? id : null);
+    let rawUrl = type === "tv"
+      ? (typeof srv.tv === "function" ? srv.tv(id, season, episode, effectiveImdb) : "")
+      : (typeof srv.movie === "function" ? srv.movie(id, effectiveImdb) : "");
 
-  const url = applyAudioTrackToUrl(rawUrl, audioType);
-  const serverNumber = index + 1;
+    const url = applyAudioTrackToUrl(rawUrl, audioType);
 
-  return {
-    id: `${srv.id}-${audioType}`,
-    serverId: srv.id,
-    name: `Server ${serverNumber} · ${srv.name}`,
-    quality: srv.quality || "1080p Full HD",
-    badge: audioType === "dub" ? "English DUB" : (srv.badge || "1080p HD"),
-    badgeClass: srv.badgeClass || "badge-fhd",
-    tag: srv.tag,
-    health: getServerHealth(srv.id),
-    url,
-    subtitles,
-    audioType,
-  };
+    return {
+      id: `${srv.id}-${audioType}`,
+      serverId: srv.id,
+      name: srv.name,
+      provider: srv.id,
+      quality: srv.quality || "1080p Full HD",
+      badge: audioType === "dub" ? "English DUB" : (srv.badge || "1080p HD"),
+      badgeClass: srv.badgeClass || "badge-fhd",
+      tag: srv.tag,
+      health: getServerHealth(srv.id),
+      adQuality: srv.adQuality ?? AD_QUALITY.LOW_ADS,
+      recommended: srv.recommended ?? false,
+      url,
+      subtitles: Array.isArray(subtitles) ? subtitles : [],
+      audioType,
+    };
+  } catch (err) {
+    console.warn(`[buildSourceEntry] Error for server ${srv?.id}:`, err);
+    return {
+      id: `${srv?.id || "server"}-${audioType}`,
+      serverId: srv?.id || "server",
+      name: srv?.name || "Server",
+      provider: srv?.id || "server",
+      quality: "1080p Full HD",
+      badge: "1080p HD",
+      badgeClass: "badge-fhd",
+      url: "",
+      subtitles: [],
+      audioType,
+    };
+  }
 }
 
 /**
  * Generates dynamic SUB, S-SUB, DUB categories for any standard TMDB or anime content.
- * Uses server capability (contentTypes + supports) + health filtering.
- * Returns distinct multi-server arrays (Server 1, Server 2, Server 3) for each audio option.
+ * Guarantees the canonical 3 providers: Vidplay, BYFMS, DGHG.
  */
 export function generateDynamicCategories({
   contentType,  // 'anime' | 'movie'
@@ -376,46 +358,38 @@ export function generateDynamicCategories({
   episode,
   subtitles = [],
 }) {
-  const subServers = getServersForContent(contentType, "sub");
-  const dubServers = getServersForContent(contentType, "dub");
+  try {
+    const providers = SERVERS.filter((s) => ["vidplay", "byfms", "dghg"].includes(s.id));
+    const isImdb = typeof id === "string" && id.startsWith("tt");
+    const effectiveImdbId = imdbId || (isImdb ? id : null);
 
-  const safeDubServers = dubServers.length >= 3
-    ? dubServers
-    : [
-        ...dubServers,
-        ...subServers.filter((s) => !dubServers.some((d) => d.id === s.id)),
-      ].slice(0, 3);
+    const subSources = providers.map((srv, idx) =>
+      buildSourceEntry(srv, { type, id, imdbId: effectiveImdbId, season, episode, subtitles, audioType: "sub" }, idx)
+    );
 
-  const subSources = subServers.slice(0, 3).map((srv, idx) =>
-    buildSourceEntry(srv, { type, id, imdbId, season, episode, subtitles, audioType: "sub" }, idx)
-  );
+    const ssubSources = providers.map((srv, idx) =>
+      buildSourceEntry(srv, { type, id, imdbId: effectiveImdbId, season, episode, subtitles, audioType: "ssub" }, idx)
+    );
 
-  const dubSources = safeDubServers.slice(0, 3).map((srv, idx) =>
-    buildSourceEntry(srv, { type, id, imdbId, season, episode, audioType: "dub" }, idx)
-  );
+    const dubSources = providers.map((srv, idx) =>
+      buildSourceEntry(srv, { type, id, imdbId: effectiveImdbId, season, episode, subtitles: [], audioType: "dub" }, idx)
+    );
 
-  // S-SUB uses softsub/clean servers from SUB category
-  const ssubSources = subSources.slice(0, 2).map((src, idx) => ({
-    ...src,
-    id: `${src.id}-ssub`,
-    name: `Server ${idx + 1} · SoftSub Stream`,
-    url: applyAudioTrackToUrl(src.url, "ssub"),
-    badge: "SoftSub HD",
-    badgeClass: "badge-hd",
-    audioType: "ssub",
-  }));
-
-  return {
-    sub: subSources.length > 0
-      ? { status: "AVAILABLE", sources: subSources }
-      : null,
-    ssub: ssubSources.length > 0
-      ? { status: "AVAILABLE", sources: ssubSources }
-      : null,
-    dub: dubSources.length > 0
-      ? { status: "AVAILABLE", sources: dubSources }
-      : null,
-  };
+    return {
+      sub: subSources.length > 0
+        ? { status: "AVAILABLE", sources: subSources }
+        : null,
+      ssub: (contentType === "anime" || type === "tv") && ssubSources.length > 0
+        ? { status: "AVAILABLE", sources: ssubSources }
+        : null,
+      dub: dubSources.length > 0
+        ? { status: "AVAILABLE", sources: dubSources }
+        : null,
+    };
+  } catch (err) {
+    console.warn("[generateDynamicCategories] Error:", err);
+    return { sub: null, ssub: null, dub: null };
+  }
 }
 
 /**

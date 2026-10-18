@@ -1,20 +1,20 @@
-﻿/**
+/**
  * ServerPlayer.jsx
  *
  * AniWave-style streaming player with dynamic server switcher.
- * - Fetches servers from local Express backend (http://localhost:3000)
+ * - Generates servers directly from sources.js (no backend needed)
  * - Embed URLs  → strict sandbox iframe
  * - HLS .m3u8  → HLS.js piped into Plyr native <video>
  * - Dark AniWave UI via CSS custom properties
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Plyr from "plyr";
 import Hls from "hls.js";
 import "plyr/dist/plyr.css";
+import { generateDynamicCategories } from "../data/sources.js";
 
-const BACKEND_URL = "http://localhost:3000";
-const EMBED_PROVIDERS = new Set(["vidplay", "filemoon", "mycloud", "mp4upload"]);
+const EMBED_PROVIDERS = new Set(["vidplay", "byfms", "dghg"]);
 
 function isHlsUrl(url = "") {
   return url.includes(".m3u8") || url.includes("manifest/hls");
@@ -22,10 +22,9 @@ function isHlsUrl(url = "") {
 
 function providerBadgeClass(name = "") {
   const l = (name || "").toLowerCase();
-  if (l.includes("vidplay"))   return "sp-badge--vidplay";
-  if (l.includes("filemoon"))  return "sp-badge--filemoon";
-  if (l.includes("mycloud"))   return "sp-badge--mycloud";
-  if (l.includes("mp4"))       return "sp-badge--mp4";
+  if (l.includes("vidplay")) return "sp-badge--vidplay";
+  if (l.includes("byfms"))   return "sp-badge--byfms";
+  if (l.includes("dghg"))    return "sp-badge--dghg";
   return "sp-badge--default";
 }
 
@@ -35,10 +34,9 @@ export default function ServerPlayer({
   episodeNum = 1,
   title      = "",
   posterUrl  = "",
+  mediaType  = "tv",
 }) {
-  const [servers, setServers]       = useState([]);
   const [active, setActive]         = useState(null);
-  const [loading, setLoading]       = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [playerMode, setPlayerMode] = useState("idle");
 
@@ -46,31 +44,34 @@ export default function ServerPlayer({
   const plyrRef  = useRef(null);
   const hlsRef   = useRef(null);
 
-  // ── fetch servers ─────────────────────────────────────────────────────
-  const fetchSources = useCallback(() => {
-    if (!animeId) return;
-    setLoading(true);
-    setFetchError("");
-    setServers([]);
-    setActive(null);
-    setPlayerMode("idle");
+  // Build server list directly from sources.js — no backend needed
+  const servers = useMemo(() => {
+    if (!animeId) return [];
+    try {
+      const categories = generateDynamicCategories({
+        contentType: mediaType === "tv" ? "anime" : "movie",
+        type: mediaType,
+        id: String(animeId),
+        season,
+        episode: episodeNum,
+      });
+      return categories?.sub?.sources || [];
+    } catch (e) {
+      console.warn("[ServerPlayer] source build error:", e);
+      return [];
+    }
+  }, [animeId, season, episodeNum, mediaType]);
 
-    fetch(`${BACKEND_URL}/sources/${animeId}/${season}/${episodeNum}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Backend error ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        if (!Array.isArray(data) || data.length === 0)
-          throw new Error("No sources returned for this episode");
-        setServers(data);
-        setActive(data[0]);
-      })
-      .catch((e) => setFetchError(e.message))
-      .finally(() => setLoading(false));
-  }, [animeId, season, episodeNum]);
-
-  useEffect(() => { fetchSources(); }, [fetchSources]);
+  // Auto-select first server when source list changes
+  useEffect(() => {
+    if (servers.length > 0) {
+      setActive(servers[0]);
+      setFetchError("");
+    } else if (animeId) {
+      setActive(null);
+      setFetchError("No sources available for this content.");
+    }
+  }, [servers, animeId]);
 
   // ── choose render mode ────────────────────────────────────────────────
   useEffect(() => {
@@ -151,16 +152,7 @@ export default function ServerPlayer({
       {/* Player shell – 16:9 aspect via padding-top */}
       <div className="sp-player-shell">
 
-        {loading && (
-          <div className="sp-overlay sp-overlay--loading">
-            <svg className="sp-spinner" viewBox="0 0 50 50">
-              <circle cx="25" cy="25" r="20" fill="none" strokeWidth="4" />
-            </svg>
-            <span>Fetching servers…</span>
-          </div>
-        )}
-
-        {!loading && fetchError && (
+        {fetchError && (
           <div className="sp-overlay sp-overlay--error">
             <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
@@ -168,11 +160,10 @@ export default function ServerPlayer({
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <p>{fetchError}</p>
-            <button className="sp-retry-btn" onClick={fetchSources}>Retry</button>
           </div>
         )}
 
-        {!loading && !fetchError && playerMode === "idle" && (
+        {!fetchError && playerMode === "idle" && (
           <div className="sp-overlay sp-overlay--idle">
             {posterUrl
               ? <img src={posterUrl} alt={title} className="sp-poster" />

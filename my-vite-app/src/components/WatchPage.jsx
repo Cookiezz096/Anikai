@@ -1,35 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { Server, Tv, ShieldCheck, HelpCircle } from 'lucide-react'; // Matches your design system icons
+import React, { useState, useEffect, useMemo } from 'react';
+import { Server, Tv, ShieldCheck } from 'lucide-react';
+import { generateDynamicCategories } from '../data/sources.js';
 
-export default function WatchPage({ animeId = "one-piece", totalEpisodes = 24 }) {
+export default function WatchPage({ animeId = "one-piece", totalEpisodes = 24, type = "tv" }) {
     const [episodeNum, setEpisodeNum] = useState(1);
-    const [servers, setServers] = useState([]);
     const [activeServer, setActiveServer] = useState(null);
     const [videoUrl, setVideoUrl] = useState('');
-    const [loading, setLoading] = useState(true);
 
-    // 1. Sync live scrapers from your local port 3000 Node server
-    useEffect(() => {
-        async function fetchServers() {
-            try {
-                setLoading(true);
-                const res = await fetch(`http://localhost:3000/api/servers/${animeId}/${episodeNum}`);
-                const data = await res.json();
-                setServers(data);
-
-                if (data && data.length > 0) {
-                    // Default to your top active streaming node provider (e.g. Vidplay)
-                    setActiveServer(data[0].name);
-                    setVideoUrl(data[0].url);
-                }
-            } catch (err) {
-                console.error("Scraper Connection Error:", err);
-            } finally {
-                setLoading(false);
-            }
+    // Build servers client-side — no backend needed
+    const servers = useMemo(() => {
+        try {
+            const categories = generateDynamicCategories({
+                contentType: type === "tv" ? "anime" : "movie",
+                type,
+                id: animeId,
+                season: 1,
+                episode: episodeNum,
+            });
+            // Flatten sub sources for the server selector
+            return categories?.sub?.sources || [];
+        } catch {
+            return [];
         }
-        fetchServers();
-    }, [animeId, episodeNum]);
+    }, [animeId, episodeNum, type]);
+
+    // Auto-select first server when list changes
+    useEffect(() => {
+        if (servers.length > 0) {
+            setActiveServer(servers[0].name);
+            setVideoUrl(servers[0].url);
+        } else {
+            setActiveServer(null);
+            setVideoUrl('');
+        }
+    }, [servers]);
 
     const handleServerChange = (srv) => {
         setActiveServer(srv.name);
@@ -69,20 +73,19 @@ export default function WatchPage({ animeId = "one-piece", totalEpisodes = 24 })
 
                     {/* Secure Video Player Window Box */}
                     <div style={styles.videoViewportContainer}>
-                        {loading ? (
-                            <div style={styles.loadingPlaceholder}>
-                                <div className="spin" style={{ marginBottom: '10px' }}>⏳</div>
-                                Parsing secure stream channels...
-                            </div>
-                        ) : (
+                        {videoUrl ? (
                             <iframe
                                 src={videoUrl}
                                 style={styles.iframeViewport}
                                 allowFullScreen
                                 scrolling="no"
-                                // Crucial sandbox token to stop forced redirects and tracking pop-ups cold
                                 sandbox="allow-scripts allow-same-origin allow-forms"
                             />
+                        ) : (
+                            <div style={styles.loadingPlaceholder}>
+                                <div className="spin" style={{ marginBottom: '10px' }}>⏳</div>
+                                Loading stream...
+                            </div>
                         )}
                     </div>
                 </div>
@@ -107,7 +110,7 @@ export default function WatchPage({ animeId = "one-piece", totalEpisodes = 24 })
                                 {srv.name.toUpperCase()}
                             </button>
                         ))}
-                        {servers.length === 0 && !loading && (
+                        {servers.length === 0 && (
                             <span style={{ fontSize: '12px', color: '#ef4444' }}>No active streams found for this track.</span>
                         )}
                     </div>

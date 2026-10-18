@@ -33,54 +33,49 @@ app.use(express.json());
 // Only WORKING providers with reliable uptime are included here.
 const EMBED_PROVIDERS = [
   {
-    name: 'VidLink',
-    provider: 'vidlink',
-    movie: (id)        => `https://vidlink.pro/movie/${id}`,
-    tv:    (id, s, e)  => `https://vidlink.pro/tv/${id}/${s}/${e}`,
+    name: 'Vidplay',
+    provider: 'vidplay',
+    movie: (id) => {
+      const isImdb = typeof id === 'string' && id.startsWith('tt');
+      return isImdb
+        ? `https://vidsrc.to/embed/movie?imdb=${encodeURIComponent(id)}`
+        : `https://vidsrc.to/embed/movie/${id}`;
+    },
+    tv: (id, s, e) => {
+      const isImdb = typeof id === 'string' && id.startsWith('tt');
+      return isImdb
+        ? `https://vidsrc.to/embed/tv?imdb=${encodeURIComponent(id)}&season=${s}&episode=${e}`
+        : `https://vidsrc.to/embed/tv/${id}/${s}/${e}`;
+    },
   },
   {
-    name: 'VidSrc TO',
-    provider: 'vidsrcto',
-    movie: (id)        => `https://vidsrc.to/embed/movie/${id}`,
-    tv:    (id, s, e)  => `https://vidsrc.to/embed/tv/${id}/${s}/${e}`,
+    name: 'BYFMS',
+    provider: 'byfms',
+    movie: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
+    tv:    (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}`,
   },
   {
-    name: 'VidSrc ME',
-    provider: 'vidsrcme',
-    movie: (id)        => `https://vidsrc.me/embed/movie?tmdb=${id}`,
-    tv:    (id, s, e)  => `https://vidsrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
-  },
-  {
-    name: 'AutoEmbed',
-    provider: 'autoembed',
-    movie: (id)        => `https://player.autoembed.cc/embed/movie/${id}`,
-    tv:    (id, s, e)  => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}`,
-  },
-  {
-    name: 'EmbedSu',
-    provider: 'embedsu',
-    movie: (id)        => `https://embed.su/embed/movie/${id}`,
-    tv:    (id, s, e)  => `https://embed.su/embed/tv/${id}/${s}/${e}`,
-  },
-  {
-    name: 'Videasy',
-    provider: 'videasy',
-    movie: (id)        => `https://player.videasy.net/movie/${id}`,
-    tv:    (id, s, e)  => `https://player.videasy.net/tv/${id}/${s}/${e}`,
+    name: 'DGHG',
+    provider: 'dghg',
+    movie: (id) => `https://player.videasy.net/movie/${id}`,
+    tv:    (id, s, e) => `https://player.videasy.net/tv/${id}/${s}/${e}`,
   },
 ];
 
 /**
  * Build the standardised server list payload for a given media item.
  * `mediaType` is 'movie' | 'tv'.
+ * Handles both TMDB integer IDs and IMDb string IDs (tt...).
  */
 function buildServerList(tmdbId, mediaType, season = 1, episode = 1) {
+  const id = String(tmdbId || '').trim();
+  if (!id) return [];
   return EMBED_PROVIDERS.map((p) => ({
     provider: p.provider,
     name: p.name,
     url: mediaType === 'tv'
-      ? p.tv(tmdbId, season, episode)
-      : p.movie(tmdbId),
+      ? p.tv(id, season, episode)
+      : p.movie(id),
   }));
 }
 
